@@ -1,0 +1,7 @@
+# IBM Sovereign Core v1.1.0 - TLS Certificates Template
+# WARNING: Ensure real certificates have >90 days validity before running bootstrap.sh
+tls:
+  ingress_wildcard_cert_path: "/etc/sovcore/certs/wildcard.sovereign-ai.slt.lk.crt"
+  ingress_wildcard_key_path: "/etc/sovcore/certs/wildcard.sovereign-ai.slt.lk.key"
+  root_ca_bundle_path: "/etc/sovcore/certs/slt-internal-ca.pem"
+  minimum_validity_days_check: 90

@@ -1,0 +1,16 @@
+# IBM Sovereign Core v1.1.0 - Global Configuration Template (SLT Digital Labs)
+platform:
+  organization: "SLT-Digital-Labs"
+  environment: "poc-test" # Change to 'production' post-feasibility
+  base_domain: "sovereign-ai.slt.lk"
+  cluster_name: "slt-sovcore-ocp"
+
+networking:
+  control_network_cidr: "10.10.10.0/24"
+  user_data_network_cidr: "10.10.20.0/24"
+  storage_network_cidr: "10.10.30.0/24"
+  oob_ipmi_network_cidr: "10.10.40.0/24"
+
+governance:
+  data_residency_region: "LK-Western-Colombo"
+  audit_logging_enabled: true

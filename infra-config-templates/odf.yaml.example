@@ -1,0 +1,13 @@
+# IBM Sovereign Core v1.1.0 - OpenShift Data Foundation (ODF) Storage Template
+storage:
+  provider: "odf-ceph" # Note: Open-source Ceph supported for PoC; ODF required for Prod
+  encryption:
+    enabled: true
+    key_management: "KYOK" # Keep Your Own Key (Data Sovereignty requirement)
+  storage_classes:
+    block_storage: "ocs-storagecluster-ceph-rbd"
+    object_storage: "ocs-storagecluster-ceph-rgw"
+  capacity_allocation:
+    ai_model_weights_pvc: "500Gi"
+    netops_vector_store_pvc: "100Gi"
+    audit_logs_pvc: "200Gi"

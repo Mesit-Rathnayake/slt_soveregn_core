@@ -1,0 +1,16 @@
+# Never commit real environment variables or IBM Entitlement Keys
+.env
+*.key
+*.pem
+*.crt
+
+# Ignore real YAML configs, but allow our safe .example templates!
+infra-config-templates/*.yaml
+infra-config-templates/*.env
+!infra-config-templates/*.example
+
+# Python & Local AI Vector DB files (for our PoC later)
+__pycache__/
+.venv/
+venv/
+chroma_db/
