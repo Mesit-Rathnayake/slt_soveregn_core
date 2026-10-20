@@ -1,0 +1,15 @@
+﻿INCIDENT TICKET: INC-2026-1105
+DATE: 2026-10-20 08:05:12 IST
+REPORTED BY: Access NOC Engineer Dilani Silva (dilani.s@slt.com.lk / 077-456-7890)
+AFFECTED NODE: GLE-OLT-HW-02 (Management IP: 192.168.88.14)
+PORT: GPON 0/3/4
+
+INCIDENT DESCRIPTION:
+Triggered PON_LOS alarm on GLE-OLT-HW-02 port GPON 0/3/4 serving Galle Fort enterprise & residential zone. All 32 connected customer ONTs dropped offline simultaneously.
+
+DIAGNOSTIC LOGS COLLECTED:
+- Ran `display ont info 0 3 4 all`: 32 out of 32 ONTs offline. Last Down Cause shows LOS for 100% of ONTs (0 DyingGasp recorded).
+- Ran `display port ddm-info 0/3 4`: OLT Tx Power normal (+3.2 dBm), Rx Power N/A (No signal from feeder fiber).
+
+ACTION REQUIRED:
+Determine if this is a power outage or feeder fiber cut per SLT-NET-SOP-044 and recommend dispatch.

@@ -1,0 +1,17 @@
+﻿INCIDENT TICKET: INC-2026-1042
+DATE: 2026-10-18 14:22:10 IST
+REPORTED BY: NOC Engineer Kasun Perera ([REDACTED_EMAIL] / [REDACTED_SL_PHONE])
+AFFECTED NODE: COL-CORE-RTR-01 (Management IP: [REDACTED_INTERNAL_IP])
+PEER NODE: GAL-AGG-RTR-02 (Peer IP: [REDACTED_INTERNAL_IP])
+ENTERPRISE CUSTOMER IMPACTED: Lanka Finance PLC (Account Contact: Nuwan Silva, [REDACTED_SL_PHONE])
+
+INCIDENT DESCRIPTION:
+At 14:15 IST, NMS triggered multiple BGP-5-ADJCHANGE Hold Timer Expired alarms between COL-CORE-RTR-01 and GAL-AGG-RTR-02 on interface TenGigE0/1/0. The link flapped 7 times within 10 minutes, causing intermittent packet loss for enterprise MPLS circuits.
+
+DIAGNOSTIC LOGS COLLECTED:
+- Ran `show interfaces TenGigE0/1/0 transceiver detail`: Optical Rx Power measured at -21.4 dBm (Tx Power: -2.1 dBm).
+- Ran `show interfaces TenGigE0/1/0 | include CRC`: 14,820 CRC errors incrementing rapidly.
+- Temporary SNMP community string used for debugging: [REDACTED_CREDENTIAL]
+
+ACTION REQUIRED:
+Determine root cause based on SLT-NET-SOP-042, recommend immediate next steps, and verify if Tier-3 escalation is mandatory.

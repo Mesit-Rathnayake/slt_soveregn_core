@@ -1,0 +1,16 @@
+﻿INCIDENT TICKET: INC-2026-1088
+DATE: 2026-10-19 09:10:00 IST
+REPORTED BY: NOC Engineer Amal Jayasinghe (amal.j@slt.com.lk / +94 71 888 1122)
+AFFECTED NODE: KDY-CORE-RTR-01 (Management IP: 172.18.10.5)
+PEER NODE: MTR-AGG-RTR-04 (Peer IP: 10.200.4.12)
+
+INCIDENT DESCRIPTION:
+Following a scheduled line card migration on KDY-CORE-RTR-01 interface TenGigE0/2/0, OSPF adjacency with MTR-AGG-RTR-04 failed to reach FULL state. Syslog repeatedly shows OSPF-5-ADJCHG Nbr from EXSTART to DOWN for the past 20 minutes.
+
+DIAGNOSTIC LOGS COLLECTED:
+- Ran `show ip ospf neighbor`: Neighbor stuck in EXSTART/DR state.
+- Ran `show ip ospf interface TenGigE0/2/0 | include MTU`: Local IP MTU is 9198 bytes, while remote peer interface reports MTU 1500 bytes.
+- Debug auth key: ospf_md5_slt_77#
+
+ACTION REQUIRED:
+Identify root cause per SLT-NET-SOP-043 and generate shift handover summary.
