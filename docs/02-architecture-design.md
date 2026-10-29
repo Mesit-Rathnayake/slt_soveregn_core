@@ -1,35 +1,35 @@
-# Phase 2: High-Level Architecture Design (AWS Hybrid Sovereign Stack)
-**Project:** SLTMobitel Hybrid Cloud & Sovereign AI Platform  
+# Phase 2: High-Level Architecture Design (AWS CloudFront & Bedrock Stack)
+**Project:** SLTMobitel Cloud & Sovereign AI Platform  
 **Prepared by:** Mesith Rathnayake (Intern AI Engineer, SLT Digital Labs)  
-**Architecture Stack:** AWS CloudFormation + Amazon CloudFront + AWS API Gateway (`/prod/retrieve`) + Amazon Bedrock + Local Ollama
+**Architecture Stack:** AWS CloudFormation + Amazon CloudFront + AWS API Gateway (`/prod/retrieve`) + AWS Lambda + Amazon Bedrock
 
 ---
 
 ## 1. Architectural Overview
-Following the transition away from the costly IBM Sovereign Core key, the platform uses a **6-layer Hybrid Cloud & Sovereign AI Architecture**. It combines **AWS Serverless & Edge Services** (provisioned via **AWS CloudFormation** and protected by **Amazon CloudFront**) with **On-Premises Sovereign Controls** (pre-flight PII/IP sanitization, local Ollama LLM/embedding execution, and RBAC audit logging).
+Following the transition away from the costly IBM Sovereign Core key, the platform uses a **6-layer AWS Cloud & Sovereign AI Architecture**. It combines **Amazon CloudFront Edge Security & Caching**, **AWS API Gateway + Lambda**, and **Amazon Bedrock** with **Sovereign Pre-Flight Controls** (PII/IP sanitization, prompt-injection guardrails, honest out-of-scope abstention, and RBAC audit logging).
 
 ### High-Level Architecture Diagram
 ```mermaid
 graph TD
-    subgraph Layer_1_Application ["1. Application & Workbench Layer (SLT Digital Labs)"]
-        UI["Streamlit 4-Tab AI Workbench (Customer KB + NetOps Triage)"]
-        SAN["Pre-Flight PII / IP / Secret Sanitizer (sanitizer.py)"]
+    subgraph Layer_1_Application ["1. Conversational Agent Layer (SLT Digital Labs)"]
+        UI["Streamlit Conversational Chat Agent (app.py)"]
+        ORCH["Unified Agent Orchestrator & Intent Router (orchestrator.py)"]
+        SAN["Pre-Flight PII / IP Sanitizer & Guardrails (sanitizer.py / guardrails_evals.py)"]
     end
 
-    subgraph Layer_2_Edge_API ["2. AWS Edge & API Gateway Layer"]
-        CF["Amazon CloudFront Edge Distribution (TLS 1.2+ / WAF)"]
-        APIGW["AWS API Gateway HTTP API (POST /prod/retrieve + x-auth-secret)"]
+    subgraph Layer_2_Edge_API ["2. Amazon CloudFront & API Gateway Layer"]
+        CF["Amazon CloudFront Edge Gateway (Edge Cache + HSTS + Origin x-auth-secret)"]
+        APIGW["AWS API Gateway HTTP API (POST /prod/retrieve)"]
     end
 
-    subgraph Layer_3_Retrieval ["3. Dual Hybrid RAG Retrieval Layer"]
+    subgraph Layer_3_Retrieval ["3. Dual Knowledge Retrieval Layer"]
         AWSKB["SLTMobitel Cloud KnowledgeBase Lambda & Vector Index (us-east-1)"]
-        LOCALVEC["Local NetOps SOP Vector Store (nomic-embed-text)"]
+        LOCALSOP["Local NetOps Approved SOP Store (BGP / OSPF / GPON)"]
     end
 
-    subgraph Layer_4_Inference ["4. Multi-Provider LLM Inference Layer"]
+    subgraph Layer_4_Inference ["4. Cloud LLM & Grounded Synthesis Layer"]
         BEDROCK["Amazon Bedrock (Claude 3 Haiku / Sonnet / Titan / Llama 3)"]
-        OLLAMA["Local Sovereign Ollama Server (granite3.1-dense:2b)"]
-        RULES["Deterministic Grounded Rule & Chunk Synthesis Fallback"]
+        SYNTH["Clean Grounded Synthesis & Abstention Engine (rag_engine.py)"]
     end
 
     subgraph Layer_5_Governance ["5. Sovereign Governance & Security Layer"]
@@ -42,21 +42,19 @@ graph TD
         CFN["AWS CloudFormation Stack (aws-cloudformation-stack.yaml)"]
     end
 
-    UI --> SAN
+    UI --> ORCH
+    ORCH --> SAN
     SAN --> RBAC
     SAN --> CF
     CF --> APIGW
     APIGW --> AWSKB
-    SAN --> LOCALVEC
+    SAN --> LOCALSOP
     AWSKB --> BEDROCK
-    AWSKB --> OLLAMA
-    AWSKB --> RULES
-    LOCALVEC --> BEDROCK
-    LOCALVEC --> OLLAMA
-    LOCALVEC --> RULES
+    AWSKB --> SYNTH
+    LOCALSOP --> BEDROCK
+    LOCALSOP --> SYNTH
     BEDROCK --> AUDIT
-    OLLAMA --> AUDIT
-    RULES --> AUDIT
+    SYNTH --> AUDIT
     CFN -. Provisions .-> CF
     CFN -. Provisions .-> APIGW
     CFN -. Provisions .-> AWSKB
@@ -66,9 +64,9 @@ graph TD
 ---
 
 ## 2. SLTMobitel AWS KnowledgeBase HTTP API Specification
-The cloud retrieval pipeline integrates directly with the production SLTMobitel KnowledgeBase API in `us-east-1`:
+The cloud retrieval pipeline integrates with the production SLTMobitel KnowledgeBase API in `us-east-1` through the CloudFront Edge Gateway (`cloudfront_gateway.py`):
 * **Endpoint:** `POST https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve`
-* **Authentication Header:** `x-auth-secret: <SLT_KB_AUTH_SECRET>`
+* **Authentication Header:** `x-auth-secret: <SLT_KB_AUTH_SECRET>` (injected as a CloudFront Origin Custom Header)
 * **Request Payload:**
   ```json
   {
