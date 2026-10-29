@@ -7,27 +7,39 @@ class SovereignGovernanceManager:
     """
     SLT Sovereign AI Governance & Audit Layer:
     Enforces Role-Based Access Control (RBAC) and maintains an immutable
-    audit log of all AI queries, PII redactions, citations, and latency.
+    audit log of all AI queries (NetOps SOPs + AWS Cloud KnowledgeBase),
+    PII redactions, citations, and latency.
     """
 
     ROLES = {
-        "Tier-1 NOC Engineer": {
+        "Tier-1 NOC / Support Agent": {
             "can_analyze_incidents": True,
             "can_search_sops": True,
+            "can_query_aws_kb": True,
             "can_view_audit_logs": False,
-            "allowed_classifications": ["Tier-1 Approved Technical Documentation"]
+            "allowed_classifications": ["Tier-1 Approved Technical Documentation", "SLTMobitel Public/Customer KB"]
         },
         "Tier-2 Core Engineer": {
             "can_analyze_incidents": True,
             "can_search_sops": True,
+            "can_query_aws_kb": True,
             "can_view_audit_logs": True,
-            "allowed_classifications": ["Tier-1 Approved Technical Documentation", "Tier-2 Restricted"]
+            "allowed_classifications": [
+                "Tier-1 Approved Technical Documentation",
+                "Tier-2 Restricted",
+                "SLTMobitel Public/Customer KB"
+            ]
         },
-        "Sovereign Platform Auditor": {
+        "Sovereign Cloud Auditor": {
             "can_analyze_incidents": True,
             "can_search_sops": True,
+            "can_query_aws_kb": True,
             "can_view_audit_logs": True,
-            "allowed_classifications": ["Tier-1 Approved Technical Documentation", "Tier-2 Restricted"]
+            "allowed_classifications": [
+                "Tier-1 Approved Technical Documentation",
+                "Tier-2 Restricted",
+                "SLTMobitel Public/Customer KB"
+            ]
         }
     }
 

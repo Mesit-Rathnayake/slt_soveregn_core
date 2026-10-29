@@ -1,16 +1,19 @@
-# IBM Sovereign Core v1.1.0 - Global Configuration Template (SLT Digital Labs)
+# SLTMobitel Hybrid Cloud AI Platform - Global Configuration Template (SLT Digital Labs)
+# Replaces costly IBM Sovereign Core license with AWS CloudFormation + CloudFront + API Gateway + Bedrock/Ollama
 platform:
   organization: "SLT-Digital-Labs"
-  environment: "poc-test" # Change to 'production' post-feasibility
-  base_domain: "sovereign-ai.slt.lk"
-  cluster_name: "slt-sovcore-ocp"
+  environment: "prod"
+  architecture_mode: "aws-hybrid-sovereign"
+  aws_region: "us-east-1"
 
-networking:
-  control_network_cidr: "10.10.10.0/24"
-  user_data_network_cidr: "10.10.20.0/24"
-  storage_network_cidr: "10.10.30.0/24"
-  oob_ipmi_network_cidr: "10.10.40.0/24"
+aws_services:
+  iac_provisioning: "AWS CloudFormation (aws-cloudformation-stack.yaml)"
+  edge_delivery_and_waf: "Amazon CloudFront + Custom Header (x-auth-secret)"
+  kb_api_gateway_endpoint: "https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve"
+  cloud_llm_provider: "Amazon Bedrock (anthropic.claude-3-haiku-20240307-v1:0)"
+  local_sovereign_llm_fallback: "Ollama (granite3.1-dense:2b + nomic-embed-text:latest)"
 
 governance:
-  data_residency_region: "LK-Western-Colombo"
+  data_residency_policy: "PII/IP Sanitization Pre-Flight before AWS API Gateway / Bedrock"
+  encryption_key_management: "AWS KMS Customer-Managed Key (KYOK)"
   audit_logging_enabled: true

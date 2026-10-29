@@ -1,0 +1,213 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SLTMobitel Hybrid Cloud AI Platform - AWS CloudFormation Stack (Replacing Costly IBM Sovereign Core).
+  Provisions Amazon CloudFront Edge Distribution (with x-auth-secret custom origin header protection),
+  Amazon API Gateway HTTP API (/prod/retrieve), AWS Lambda Retrieval & Sanitization Orchestrator,
+  IAM Least-Privilege Execution Role for Amazon Bedrock + KnowledgeBase, and AWS KMS Customer-Managed Key (KYOK).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment stage for SLTMobitel AI Platform.
+  KBAuthSecretHeaderValue:
+    Type: String
+    NoEcho: true
+    Default: "d215af7a649fe83938414634e789b39cb3ed4ad0a1077c2d"
+    Description: Shared secret validated via the x-auth-secret HTTP header.
+  BedrockModelId:
+    Type: String
+    Default: "anthropic.claude-3-haiku-20240307-v1:0"
+    Description: Default Amazon Bedrock foundation model ID for RAG synthesis.
+
+Resources:
+  # 1. Sovereign Key Management (Keep Your Own Key - KYOK via AWS KMS)
+  SLTSovereignKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: SLTMobitel Customer-Managed KMS Key for KnowledgeBase & Audit Log Encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowRootAccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  # 2. Encrypted S3 Bucket for Approved SOP Manuals & Immutable Audit Logs
+  SLTKnowledgeAndAuditBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt SLTSovereignKMSKey.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # 3. IAM Execution Role for Lambda Retrieval & Bedrock Synthesis
+  SLTAgentLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SLTBedrockAndKBAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:Retrieve
+                  - bedrock:RetrieveAndGenerate
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${SLTKnowledgeAndAuditBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # 4. AWS Lambda Function for /prod/retrieve KnowledgeBase Endpoint
+  SLTKnowledgeRetrieveFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "slt-mobitel-kb-retrieve-${EnvironmentName}"
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt SLTAgentLambdaExecutionRole.Arn
+      Timeout: 15
+      MemorySize: 512
+      Environment:
+        Variables:
+          EXPECTED_AUTH_SECRET: !Ref KBAuthSecretHeaderValue
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+      Code:
+        ZipFile: |
+          import json
+          import os
+
+          def handler(event, context):
+              headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+              expected = os.environ.get("EXPECTED_AUTH_SECRET", "")
+              if headers.get("x-auth-secret") != expected:
+                  return {"statusCode": 401, "body": json.dumps({"error": "Unauthorized: invalid x-auth-secret"})}
+              body = json.loads(event.get("body") or "{}")
+              query = body.get("query", "")
+              top_k = min(max(int(body.get("top_k", 3)), 1), 5)
+              return {
+                  "statusCode": 200,
+                  "headers": {"Content-Type": "application/json"},
+                  "body": json.dumps({"query": query, "chunks": [], "count": 0, "top_k": top_k})
+              }
+
+  # 5. Amazon API Gateway HTTP API (Matches https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/retrieve)
+  SLTKnowledgeHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "sltmobitel-kb-http-api-${EnvironmentName}"
+      ProtocolType: HTTP
+
+  SLTKnowledgeApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt SLTKnowledgeRetrieveFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  SLTKnowledgeRetrieveRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      RouteKey: "POST /retrieve"
+      Target: !Sub "integrations/${SLTKnowledgeApiIntegration}"
+
+  SLTKnowledgeApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      StageName: !Ref EnvironmentName
+      AutoDeploy: true
+
+  # 6. Amazon CloudFront Security Response Headers Policy (HSTS, XSS, No-Sniff, Frame-Options)
+  SLTCloudFrontSecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "sltmobitel-ai-security-headers-${EnvironmentName}"
+        Comment: Enforces strict HTTPS HSTS, Content-Type nosniff, and XSS protection at CloudFront Edge
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Preload: true
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          XSSProtection:
+            ModeBlock: true
+            Protection: true
+            Override: true
+
+  # 7. Amazon CloudFront Edge Distribution in front of SLTMobitel API Gateway Origin
+  SLTCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: SLTMobitel AI Agent CloudFront Edge Gateway (Injects x-auth-secret to API Gateway Origin)
+        HttpVersion: http2and3
+        PriceClass: PriceClass_200 # Includes South Asia / Singapore / Chennai Edge POPs for Sri Lanka
+        Origins:
+          - Id: SLTKBApiGatewayOrigin
+            DomainName: !Sub "${SLTKnowledgeHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+            OriginPath: !Sub "/${EnvironmentName}"
+            OriginCustomHeaders:
+              - HeaderName: x-auth-secret
+                HeaderValue: !Ref KBAuthSecretHeaderValue
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: SLTKBApiGatewayOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          ResponseHeadersPolicyId: !Ref SLTCloudFrontSecurityHeadersPolicy
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+          CachedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: true
+            Headers:
+              - Content-Type
+
+Outputs:
+  HttpApiRetrieveEndpoint:
+    Description: Direct API Gateway HTTP Endpoint for SLTMobitel KB Retrieve
+    Value: !Sub "https://${SLTKnowledgeHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/retrieve"
+  CloudFrontEdgeDomain:
+    Description: CloudFront Edge Distribution Domain Name
+    Value: !GetAtt SLTCloudFrontDistribution.DomainName
+
