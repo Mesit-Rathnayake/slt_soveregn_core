@@ -26,17 +26,10 @@ class SLTCloudFrontEdgeGateway:
     """
 
     def __init__(self, env_path: Path | None = None, cache_ttl_seconds: int = 300):
-        if env_path:
-            load_dotenv_file(env_path)
+        load_dotenv_file(env_path)
         self.cloudfront_domain = os.getenv("SLT_CLOUDFRONT_DOMAIN", "").strip()
-        self.api_gateway_origin = os.getenv(
-            "SLT_KB_API_URL",
-            "https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve"
-        ).strip()
-        self.origin_custom_secret = os.getenv(
-            "SLT_KB_AUTH_SECRET",
-            "d215af7a649fe83938414634e789b39cb3ed4ad0a1077c2d"
-        ).strip()
+        self.api_gateway_origin = os.getenv("SLT_KB_API_URL", "").strip()
+        self.origin_custom_secret = os.getenv("SLT_KB_AUTH_SECRET", "").strip()
         self.cache_enabled = os.getenv("SLT_CLOUDFRONT_CACHE_ENABLED", "true").lower() == "true"
         self.cache_ttl_seconds = cache_ttl_seconds
         self._edge_cache: dict[str, dict] = {}

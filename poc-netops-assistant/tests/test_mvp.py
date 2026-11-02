@@ -36,9 +36,15 @@ def test_critical_optical_loss_escalation():
 
 
 def test_aws_kb_client_request_and_normalization():
-    client = SLTMobitelCloudKBClient(env_path=BASE_DIR / ".env")
-    assert client.endpoint_url == "https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve"
-    assert client.auth_secret == "d215af7a649fe83938414634e789b39cb3ed4ad0a1077c2d"
+    mock_url = "https://mock-kb.execute-api.us-east-1.amazonaws.com/prod/retrieve"
+    mock_secret = "mock-test-auth-secret-token"
+    client = SLTMobitelCloudKBClient(
+        env_path=BASE_DIR / ".env",
+        endpoint_url=mock_url,
+        auth_secret=mock_secret
+    )
+    assert client.endpoint_url == mock_url
+    assert client.auth_secret == mock_secret
 
     mock_api_payload = {
         "query": "How do I check data balance?",
@@ -58,8 +64,8 @@ def test_aws_kb_client_request_and_normalization():
     with patch("urllib.request.urlopen", return_value=mock_resp) as mocked_open:
         result = client.retrieve("How do I check data balance?", top_k=3)
         req_obj = mocked_open.call_args[0][0]
-        assert req_obj.full_url == "https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve"
-        assert req_obj.headers.get("X-auth-secret") == "d215af7a649fe83938414634e789b39cb3ed4ad0a1077c2d"
+        assert req_obj.full_url == mock_url
+        assert req_obj.headers.get("X-auth-secret") == mock_secret
         assert result["count"] == 1
         assert result["chunks"][0]["doc_id"] == "SLT-AWS-KB-01"
         assert result["chunks"][0]["score"] == 0.89

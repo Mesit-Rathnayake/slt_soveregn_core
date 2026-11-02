@@ -65,8 +65,8 @@ graph TD
 
 ## 2. SLTMobitel AWS KnowledgeBase HTTP API Specification
 The cloud retrieval pipeline integrates with the production SLTMobitel KnowledgeBase API in `us-east-1` through the CloudFront Edge Gateway (`cloudfront_gateway.py`):
-* **Endpoint:** `POST https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve`
-* **Authentication Header:** `x-auth-secret: <SLT_KB_AUTH_SECRET>` (injected as a CloudFront Origin Custom Header)
+* **Endpoint:** `POST https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/retrieve` (configured via `SLT_KB_API_URL`)
+* **Authentication Header:** Configured via `SLT_KB_AUTH_SECRET` (injected as a CloudFront Origin Custom Header)
 * **Request Payload:**
   ```json
   {

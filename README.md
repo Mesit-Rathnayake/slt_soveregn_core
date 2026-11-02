@@ -10,7 +10,7 @@
 Originally scoped around **IBM Sovereign Core v1.1.0**, this platform was strategically re-architected into a **Cost-Optimized AWS Cloud & Sovereign AI Platform** (eliminating costly IBM Sovereign Core entitlement licensing while preserving data sovereignty, pre-flight PII/IP sanitization, perimeter guardrails, RBAC, and immutable audit logging).
 
 The platform combines **AWS CloudFormation, Amazon CloudFront, AWS API Gateway, and Amazon Bedrock** to power a unified **Conversational AI Chat Agent** covering two core SLTMobitel domains:
-1. **🌐 SLTMobitel Cloud KnowledgeBase Assistant:** Queries the live SLTMobitel KnowledgeBase HTTP API (`POST https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve`) through **Amazon CloudFront Edge Caching & Origin Header Protection (`x-auth-secret`)**, cleans multilingual/JSON website scrapes, and synthesizes natural answers (or politely abstains when a question is outside the knowledge base).
+1. **🌐 SLTMobitel Cloud KnowledgeBase Assistant:** Queries the live SLTMobitel KnowledgeBase HTTP API (`POST /prod/retrieve`) through **Amazon CloudFront Edge Caching & Origin Header Protection**, cleans multilingual/JSON website scrapes, and synthesizes natural answers (or politely abstains when a question is outside the knowledge base).
 2. **🚨 AI Network Operations (NetOps) Assistant:** Helps NOC engineers automatically mask PII/IP data from incident tickets, diagnose faults against approved technical SOP manuals (BGP, OSPF, GPON), and generate read-only troubleshooting steps.
 
 ---
@@ -43,12 +43,12 @@ The platform combines **AWS CloudFormation, Amazon CloudFront, AWS API Gateway, 
 pip install -r poc-netops-assistant/requirements.txt
 ```
 
-### 2. Configure Environment (`.env`)
-`poc-netops-assistant/.env` is pre-configured with the SLTMobitel AWS KnowledgeBase API endpoint and `x-auth-secret` from `SLTMobitel KnowledgeBase Access Api.pdf`:
+### 2. Configure Environment (`.env` or Streamlit Cloud Secrets)
+Configure `poc-netops-assistant/.env` (or Streamlit Cloud **App Settings → Secrets**) with your API endpoint and secret:
 ```env
 AI_INFERENCE_MODE=AWS_BEDROCK
-SLT_KB_API_URL=https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve
-SLT_KB_AUTH_SECRET=d215af7a649fe83938414634e789b39cb3ed4ad0a1077c2d
+SLT_KB_API_URL=https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/retrieve
+SLT_KB_AUTH_SECRET=<your-kb-auth-secret>
 SLT_KB_DEFAULT_TOP_K=3
 AWS_REGION=us-east-1
 AWS_BEDROCK_MODEL_ID=anthropic.claude-3-haiku-20240307-v1:0

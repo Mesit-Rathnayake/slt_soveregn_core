@@ -11,16 +11,24 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-def load_dotenv_file(env_path: Path):
-    """Lightweight .env loader with zero external dependencies."""
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+def load_dotenv_file(env_path: Path | None = None):
+    """Lightweight .env + Streamlit Secrets loader with zero external dependencies."""
+    if env_path and env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+    # Also load from Streamlit Cloud Secrets (st.secrets) if available
+    try:
+        import streamlit as st
+        for k, v in st.secrets.items():
+            if isinstance(v, (str, int, float, bool)):
+                os.environ.setdefault(str(k).strip(), str(v).strip())
+    except Exception:
+        pass
 
 
 class SovereignLLMGateway:

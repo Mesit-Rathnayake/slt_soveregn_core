@@ -38,7 +38,7 @@
   - [x] Author declarative AWS CloudFormation template with CloudFront Distribution & Security Headers Policy (`infra-config-templates/aws-cloudformation-stack.yaml.example`).
   - [x] Implement `SLTCloudFrontEdgeGateway` (`src/retrieval/cloudfront_gateway.py`) and 6-layer architecture (`02-architecture-design.md`).
 - [x] **Phase 3 — SLTMobitel AWS KnowledgeBase API & Bedrock Integration (Complete)**
-  - [x] Integrate live HTTP API endpoint (`POST https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve`) with `x-auth-secret` authentication, document discovery, and CSV/JSON chunk cleaning (`aws_kb_client.py`).
+  - [x] Integrate live HTTP API endpoint (`POST /prod/retrieve`) with secret header authentication, document discovery, and CSV/JSON chunk cleaning (`aws_kb_client.py`).
   - [x] Configure **AWS Bedrock (`boto3`)** gateway and remove test-only Ollama dependencies (`llm_gateway.py`).
 - [x] **Phase 4 — Conversational Chat Agent, Guardrails & Automated Testing (Complete)**
   - [x] Build user-friendly **Conversational Chat Agent UI** (`app.py`) with `SLTMobitelUnifiedAgent` (`orchestrator.py`), perimeter guardrails (`guardrails_evals.py`), and honest abstention.

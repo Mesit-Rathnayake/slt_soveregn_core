@@ -64,7 +64,7 @@ audit_log_path = BASE_DIR / "data" / "audit_trail.jsonl"
 
 
 @st.cache_resource
-def get_agent_and_governance(_version: str = "v6.5"):
+def get_agent_and_governance(_version: str = "v6.6"):
     agent_inst = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
     gov_inst = SovereignGovernanceManager(audit_log_path=audit_log_path)
     return agent_inst, gov_inst
@@ -120,24 +120,13 @@ with st.sidebar:
             index=0
         )
 
-        ollama_model_input = None
-        gemini_key_input = None
         bedrock_model_input = None
-        aws_region_input = os.getenv("AWS_REGION", "us-east-1")
-        aws_ak_input = os.getenv("AWS_ACCESS_KEY_ID", "")
-        aws_sk_input = os.getenv("AWS_SECRET_ACCESS_KEY", "")
-
         if selected_engine == "AWS_BEDROCK":
             bedrock_model_input = st.selectbox(
                 "AWS Bedrock Model:",
                 options=SovereignLLMGateway.BEDROCK_MODELS,
                 index=0
             )
-            aws_region_input = st.text_input("AWS Region:", value=aws_region_input)
-            aws_ak_input = st.text_input("AWS Access Key ID:", value=aws_ak_input, type="password")
-            aws_sk_input = st.text_input("AWS Secret Access Key:", value=aws_sk_input, type="password")
-        elif selected_engine == "GEMINI_CLOUD":
-            gemini_key_input = st.text_input("Gemini API Key:", value=os.getenv("GEMINI_API_KEY", ""), type="password")
 
         route_choice = st.selectbox(
             "Routing Mode:",
@@ -151,42 +140,19 @@ with st.sidebar:
         )
         selected_route = route_choice.split()[0]
 
-        kb_top_k = st.slider("AWS KB Top-K Chunks:", 1, 5, 3)
-        cf_domain_input = st.text_input(
-            "CloudFront Distribution Domain (Optional):",
-            value=os.getenv("SLT_CLOUDFRONT_DOMAIN", ""),
-            placeholder="e.g. d111111abcdef8.cloudfront.net"
-        )
-        kb_endpoint_input = st.text_input("API Gateway Origin Endpoint:", value=agent.rag.aws_kb_client.endpoint_url)
-        kb_secret_input = st.text_input(
-            "Origin Header `x-auth-secret`:",
-            value=agent.rag.aws_kb_client.auth_secret,
-            type="password"
-        )
+        kb_top_k = st.slider("Top-K Chunks:", 1, 5, 3)
 
         cf_metrics = agent.rag.aws_kb_client.cloudfront.metrics
         st.caption(
-            f"CloudFront Cache: `{cf_metrics['cache_hits']}` Hits | "
-            f"`{cf_metrics['cache_misses']}` Origin Fetches (`MAA50-P1`)"
+            f"Edge Cache: `{cf_metrics['cache_hits']}` Hits | "
+            f"`{cf_metrics['cache_misses']}` Origin Fetches"
         )
-        if st.button("Invalidate Edge Cache", use_container_width=True):
+        if st.button("Clear Cache", use_container_width=True):
             agent.rag.aws_kb_client.cloudfront.clear_edge_cache()
             st.success("Cache cleared.")
 
-        if st.button("Scan KnowledgeBase Chunks", use_container_width=True):
-            with st.spinner("Scanning API..."):
-                fresh_client = SLTMobitelCloudKBClient(env_path=BASE_DIR / ".env")
-                st.session_state["discovered_kb_docs"] = fresh_client.discover_knowledge_base_contents()
-
-        if "discovered_kb_docs" in st.session_state:
-            docs_found = st.session_state["discovered_kb_docs"]
-            st.caption(f"Discovered {len(docs_found)} chunks in API.")
-            for d in docs_found:
-                st.markdown(f"**Chunk #{d['chunk_index']}** (`{d['score']}`)")
-                st.caption(d["content"])
-
         show_dev_details = st.checkbox(
-            "Show source inspector under replies",
+            "Show retrieved sources under replies",
             value=False
         )
 
@@ -276,14 +242,7 @@ if active_user_message:
                 inference_engine=selected_engine,
                 top_k=kb_top_k,
                 conversation_history=st.session_state.chat_history,
-                ollama_model=ollama_model_input,
-                gemini_api_key=gemini_key_input,
-                bedrock_model=bedrock_model_input,
-                aws_region=aws_region_input,
-                aws_access_key_id=aws_ak_input,
-                aws_secret_access_key=aws_sk_input,
-                kb_secret_override=kb_secret_input,
-                kb_endpoint_override=kb_endpoint_input
+                bedrock_model=bedrock_model_input
             )
             governance.log_event(
                 user_role=active_role,

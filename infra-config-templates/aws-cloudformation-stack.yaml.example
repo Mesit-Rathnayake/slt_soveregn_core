@@ -14,8 +14,8 @@ Parameters:
   KBAuthSecretHeaderValue:
     Type: String
     NoEcho: true
-    Default: "d215af7a649fe83938414634e789b39cb3ed4ad0a1077c2d"
-    Description: Shared secret validated via the x-auth-secret HTTP header.
+    Default: "REPLACE_WITH_SLT_KB_AUTH_SECRET"
+    Description: Shared secret validated via the custom origin HTTP header.
   BedrockModelId:
     Type: String
     Default: "anthropic.claude-3-haiku-20240307-v1:0"

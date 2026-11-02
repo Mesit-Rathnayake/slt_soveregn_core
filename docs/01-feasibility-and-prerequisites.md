@@ -9,14 +9,14 @@
 Originally, this platform was scoped around **IBM Sovereign Core v1.1.0** atop bare-metal Red Hat OpenShift. Due to the prohibitive licensing and bare-metal CapEx costs of acquiring an IBM Sovereign Core entitlement key, SLT Digital Labs transitioned the architecture to a **Cost-Optimized AWS Cloud & Edge Sovereign AI Architecture**:
 
 1. **Data Sovereignty & Pre-Flight Sanitization:** All incident tickets and customer queries pass through a local **Sovereign Data Sanitizer** (`sanitizer.py`) and **Input Guardrail** (`guardrails_evals.py`) that strip Sri Lankan phone numbers, emails, internal IPv4 addresses, and credentials *before* any payload is transmitted to AWS API Gateway or Amazon Bedrock. Cloud storage encryption uses **AWS KMS Customer-Managed Keys (KYOK)**.
-2. **Edge-Accelerated Knowledge Retrieval (CloudFront + SLTMobitel AWS KB API):** Knowledge retrieval uses the live **SLTMobitel KnowledgeBase Access HTTP API** (`POST https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve`) fronted by **Amazon CloudFront** (`cloudfront_gateway.py`) and authenticated via `x-auth-secret`, paired with a local SOP store for internal NetOps manuals.
+2. **Edge-Accelerated Knowledge Retrieval (CloudFront + SLTMobitel AWS KB API):** Knowledge retrieval uses the live **SLTMobitel KnowledgeBase Access HTTP API** (`POST /prod/retrieve`) fronted by **Amazon CloudFront** (`cloudfront_gateway.py`) and authenticated via `.env` / Streamlit Secrets (`SLT_KB_AUTH_SECRET`), paired with a local SOP store for internal NetOps manuals.
 3. **Digital Sovereignty & Governance:** Enforces Role-Based Access Control (RBAC), read-only network advisory guardrails, honest out-of-scope abstention, and an immutable JSONL audit trail (`audit_trail.jsonl`).
 
 ---
 
 ## 2. Credentials & Entitlement Checklist
-- [x] **SLTMobitel KnowledgeBase HTTP API Endpoint:** `https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve`
-- [x] **SLTMobitel KnowledgeBase Auth Secret (`x-auth-secret`):** Configured in `.env` (`SLT_KB_AUTH_SECRET`).
+- [x] **SLTMobitel KnowledgeBase HTTP API Endpoint:** Configured in `.env` (`SLT_KB_API_URL`).
+- [x] **SLTMobitel KnowledgeBase Auth Secret:** Configured in `.env` (`SLT_KB_AUTH_SECRET`).
 - [x] **Amazon CloudFront Edge Gateway (`cloudfront_gateway.py`):** Configured with edge caching and origin custom header injection.
 - [ ] **AWS IAM Credentials for Amazon Bedrock (`boto3`):** `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` with `bedrock:InvokeModel` permission in `us-east-1` (Optional; system automatically falls back to clean grounded synthesis when IAM credentials are not present).
 

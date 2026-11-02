@@ -19,12 +19,11 @@ from retrieval.cloudfront_gateway import SLTCloudFrontEdgeGateway
 class SLTMobitelCloudKBClient:
     """
     SLTMobitel KnowledgeBase Access HTTP API Client (AWS API Gateway / CloudFront).
-    Endpoint: POST https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve
-    Header: x-auth-secret
+    Reads SLT_KB_API_URL and SLT_KB_AUTH_SECRET from .env or Streamlit Cloud Secrets.
     """
 
-    DEFAULT_ENDPOINT = "https://ww5659pvgk.execute-api.us-east-1.amazonaws.com/prod/retrieve"
-    DEFAULT_SECRET = "d215af7a649fe83938414634e789b39cb3ed4ad0a1077c2d"
+    DEFAULT_ENDPOINT = ""
+    DEFAULT_SECRET = ""
 
     @staticmethod
     def clean_raw_kb_text(raw_text: str) -> str:
@@ -131,8 +130,7 @@ class SLTMobitelCloudKBClient:
         return max(0.0, min(score, 0.99))
 
     def __init__(self, env_path: Path | None = None, endpoint_url: str | None = None, auth_secret: str | None = None):
-        if env_path:
-            load_dotenv_file(env_path)
+        load_dotenv_file(env_path)
         self.cloudfront = SLTCloudFrontEdgeGateway(env_path=env_path)
         self.endpoint_url = (
             endpoint_url
@@ -220,7 +218,7 @@ class SLTMobitelCloudKBClient:
             "query": data.get("query", query.strip()),
             "chunks": normalized_chunks,
             "count": data.get("count", len(normalized_chunks)),
-            "endpoint": url
+            "endpoint": "[REDACTED-ORIGIN]"
         }
         return self.cloudfront.put_cached_response(query.strip(), k, result_payload)
 
@@ -277,7 +275,7 @@ if __name__ == "__main__":
     base_dir = Path(__file__).resolve().parents[2]
     client = SLTMobitelCloudKBClient(env_path=base_dir / ".env")
     print("=" * 75)
-    print(f"🔍 DISCOVERING DOCUMENTS IN SLTMOBITEL AWS KB API:\n   {client.endpoint_url}")
+    print("DISCOVERING DOCUMENTS IN SLTMOBITEL AWS KB API")
     print("=" * 75)
     try:
         discovered = client.discover_knowledge_base_contents()
