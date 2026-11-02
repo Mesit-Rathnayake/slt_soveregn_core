@@ -125,12 +125,13 @@ class SovereignNetOpsRAG:
             raise ValueError(f"Unsupported LLM mode: {active_mode}")
 
     STOPWORDS = {
-        "how", "what", "when", "where", "who", "why", "which", "can", "could",
-        "would", "should", "the", "and", "for", "with", "from", "that", "this",
-        "have", "has", "had", "not", "are", "was", "were", "will", "about",
+        "how", "hows", "what", "whats", "when", "where", "who", "whos", "why", "which",
+        "can", "could", "would", "should", "the", "and", "for", "with", "from", "that",
+        "this", "have", "has", "had", "not", "are", "was", "were", "will", "about",
         "into", "your", "my", "our", "their", "please", "tell", "check", "get",
         "use", "using", "slt", "mobitel", "sltmobitel", "context", "previous",
-        "question", "does", "need", "want"
+        "question", "does", "need", "want", "sri", "lanka", "lankan", "colombo",
+        "visit", "island", "world", "way", "more", "make", "give", "know"
     }
 
     @classmethod
@@ -143,22 +144,30 @@ class SovereignNetOpsRAG:
             return False
 
         top_score = max(float(c.get("score", 0.0)) for c in chunks)
-        # Extract meaningful query keywords (excluding common stopwords)
+        # Extract meaningful query keywords (excluding common stopwords & generic country names)
         raw_words = re.findall(r"[a-zA-Z0-9]{3,}", query_text.lower())
         query_keywords = {w for w in raw_words if w not in cls.STOPWORDS}
+
+        # If the query has no meaningful domain keywords left after removing stopwords, abstain
+        if not query_keywords:
+            return False
 
         combined_content = " ".join(c.get("content", "") for c in chunks).lower()
         content_words = set(re.findall(r"[a-zA-Z0-9]{3,}", combined_content))
 
         overlap = query_keywords.intersection(content_words)
 
-        # High vector similarity score (>= 0.65) is trusted directly
-        if top_score >= 0.65:
+        # Require at least 1 meaningful non-stopword keyword from the user's query to exist in the chunks!
+        if len(overlap) == 0:
+            return False
+
+        # High vector similarity score (>= 0.65) with at least 1 matching domain keyword
+        if top_score >= 0.65 and len(overlap) >= 1:
             return True
-        # Moderate score (>= min_score) requires at least 1 meaningful keyword match
-        if top_score >= min_score and (len(overlap) >= 1 or not query_keywords):
+        # Moderate score (>= min_score) with at least 1 matching domain keyword
+        if top_score >= min_score and len(overlap) >= 1:
             return True
-        # Below min_score (e.g., 0.45 noise), require strong keyword overlap (>= 2 matching domain terms)
+        # Below min_score (e.g., 0.42–0.49), require strong keyword overlap (>= 2 matching domain terms)
         if top_score >= 0.42 and len(overlap) >= 2:
             return True
 

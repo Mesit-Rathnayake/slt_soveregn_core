@@ -177,6 +177,31 @@ def test_guardrails_block_prompt_injection_and_score_evals():
         assert thx_res["intent_route"] == "CONVERSATIONAL_GREETING"
         assert "welcome" in thx_res["answer_markdown"].lower()
 
+    # 6. Geography/trivia questions mentioning "Sri Lanka" (e.g., "Whats the Capital of Sri Lanka") must abstain
+    sri_lanka_ad_kb = {
+        "query": "Whats the Capital of Sri Lanka",
+        "chunks": [
+            {
+                "doc_id": "SLT-AWS-KB-01",
+                "doc_title": "SLTMobitel Cloud KnowledgeBase (AWS)",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.56)",
+                "content": "Visit Sri Lanka and you will come back for more! Bridge the miles with SLTMobitel IDD services.",
+                "score": 0.56,
+                "similarity_score": 0.56
+            }
+        ],
+        "count": 1
+    }
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=sri_lanka_ad_kb):
+        cap_res = agent.run_agent(
+            "Whats the Capital of Sri Lanka",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE"
+        )
+        assert cap_res["has_enough_knowledge"] is False
+        assert "don't have enough knowledge" in cap_res["answer_markdown"].lower()
+
 
 
 
