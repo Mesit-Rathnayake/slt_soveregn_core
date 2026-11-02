@@ -155,12 +155,22 @@ def test_guardrails_block_prompt_injection_and_score_evals():
         assert router_res["has_enough_knowledge"] is False
         assert "don't have enough knowledge" in router_res["answer_markdown"].lower()
 
-    # 5. Conversational greetings & capability inquiries ("Hello How Can you help me today" / "what can I ask from you") must be answered warmly
+    # 5. Conversational greetings, capability inquiries & thankyou/ok acknowledgments must be answered cleanly
     for phrase in ("Hello How Can you help me today", "Hello what are the things that I can ask from you..."):
         greet_res = agent.run_agent(phrase, route_mode="AUTO")
         assert greet_res["intent_route"] == "CONVERSATIONAL_GREETING"
         assert greet_res["has_enough_knowledge"] is True
-        assert "how i can help you today" in greet_res["answer_markdown"].lower()
+        assert "i can help with" in greet_res["answer_markdown"].lower()
+
+    hi_res = agent.run_agent("Hello", route_mode="AUTO")
+    assert hi_res["intent_route"] == "CONVERSATIONAL_GREETING"
+    assert hi_res["answer_markdown"] == "Hello! How can I help you today?"
+
+    for thank_phrase in ("thankyou", "thank you", "okay thanks", "got it"):
+        thx_res = agent.run_agent(thank_phrase, route_mode="AUTO")
+        assert thx_res["intent_route"] == "CONVERSATIONAL_GREETING"
+        assert "welcome" in thx_res["answer_markdown"].lower()
+
 
 
 

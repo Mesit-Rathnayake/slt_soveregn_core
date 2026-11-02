@@ -52,27 +52,65 @@ class SLTMobitelUnifiedAgent:
     @staticmethod
     def _is_conversational_smalltalk(user_input: str) -> str | None:
         """
-        Detects natural conversational greetings, 'how can you help me' capability questions,
-        thank-yous, and goodbyes so the agent responds like a friendly human assistant
-        instead of treating greetings as database queries.
-        Returns the smalltalk category ('GREETING_CAPABILITIES', 'THANKS', 'GOODBYE') or None.
+        Comprehensive Conversational & General Inquiry Classifier:
+        Detects natural greetings, 'how are you', capability questions, thank-yous,
+        apologies, acknowledgments, farewells, and general SLTMobitel company overview
+        questions so the agent responds naturally to any conversational phrasing.
         """
         cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", user_input.lower()).strip()
         words = cleaned.split()
-        if not words or len(words) > 14:
+        if not words or len(words) > 18:
             return None
 
-        # If the message already contains a specific domain question word (like bgp, ospf, peotv, balance, apn, lte, ussd),
-        # let it go to the knowledge base even if it starts with "Hi"
+        joined = " ".join(words)
+        compact = "".join(words)  # catches 'thankyou', 'goodmorning', 'howareyou', 'whoru'
+
+        # 1. General "What is SLTMobitel / Who is SLT" company overview questions
+        company_overview_patterns = [
+            r"\bwhat\s+is\s+slt(?:mobitel)?\b",
+            r"\bwho\s+is\s+slt(?:mobitel)?\b",
+            r"\btell\s+me\s+about\s+slt(?:mobitel)?\b",
+            r"\babout\s+slt(?:mobitel)?\s+company\b"
+        ]
+        if any(re.search(pat, joined) for pat in company_overview_patterns) and len(words) <= 9:
+            return "GENERAL_SLT_OVERVIEW"
+
+        # If the message contains a specific technical or product domain keyword, let it go to the KB
         domain_terms = {
             "bgp", "ospf", "gpon", "mtu", "rx", "dbm", "flap", "incident", "ticket",
             "balance", "peotv", "lte", "broadband", "apn", "ussd", "1456", "888",
-            "170", "credit", "roaming", "starlink", "package", "price", "bill", "sim"
+            "170", "credit", "roaming", "starlink", "package", "price", "bill", "sim",
+            "router", "wifi", "wlan", "fibre", "fiber", "addon", "youtube", "whatsapp"
         }
         if any(w in domain_terms for w in words):
             return None
 
-        joined = " ".join(words)
+        # 2. Gratitude / Thanks (catches 'thankyou', 'thanks a lot', 'tysm', 'ty', 'appreciate', etc.)
+        if any(sub in compact for sub in ("thankyou", "thanks", "thx", "tysm", "appreciate")):
+            return "THANKS"
+        thanks_patterns = [
+            r"\bthank\b", r"\bty\b", r"\btks\b", r"\bgreat\s+help\b",
+            r"\bvery\s+helpful\b", r"\bhelpful\b", r"\bgot\s+it\b", r"\bmuch\s+obliged\b"
+        ]
+        if any(re.search(pat, joined) for pat in thanks_patterns):
+            return "THANKS"
+
+        # 3. Farewells / Goodbyes
+        if any(sub in compact for sub in ("goodbye", "goodnight", "byebye", "seeya", "takecare", "haveaniceday")):
+            return "GOODBYE"
+        if words[0] in {"bye", "cya", "farewell", "gn"} or joined in {"see you", "see you later", "talk to you later"}:
+            return "GOODBYE"
+
+        # 4. How-are-you / Bot identity / Politeness
+        how_are_you_patterns = [
+            r"\bhow\s+are\s+you", r"\bhow\s+r\s+u\b", r"\bhows\s+it\s+going",
+            r"\bhow\s+is\s+it\s+going", r"\bare\s+you\s+(?:a\s+)?(?:bot|ai|human|real)",
+            r"\bwhat\s+is\s+your\s+name\b", r"\bwhats\s+your\s+name\b"
+        ]
+        if any(re.search(pat, joined) for pat in how_are_you_patterns) or "howareyou" in compact:
+            return "HOW_ARE_YOU"
+
+        # 5. Capability / "What can I ask" / "Help me" inquiries
         capability_patterns = [
             r"\bhow\s+can\s+you\s+help",
             r"\bwhat\s+can\s+you\s+do",
@@ -83,46 +121,35 @@ class SLTMobitelUnifiedAgent:
             r"\bquestions\s+(?:that\s+)?i\s+can\s+ask",
             r"\bwho\s+are\s+you",
             r"\bwhat\s+are\s+you",
-            r"\bhelp\s+me\b",
+            r"\bhelp\b",
             r"\bwhat\s+topics\b",
             r"\bwhat\s+services\b",
-            r"\bhow\s+are\s+you",
             r"\btell\s+me\s+about\s+yourself",
-            r"\byour\s+capabilities\b"
+            r"\byour\s+capabilities\b",
+            r"\bguide\s+me\b",
+            r"\bget\s+started\b"
         ]
         if any(re.search(pat, joined) for pat in capability_patterns):
-            return "GREETING_CAPABILITIES"
+            return "CAPABILITIES"
 
-        greeting_words = {"hi", "hello", "hey", "ayubowan", "morning", "afternoon", "evening", "greetings", "yo"}
-        if words[0] in greeting_words:
-            # If it starts with a greeting and asks anything about "you" / "ask" / "help" / "do", treat as greeting!
-            if len(words) <= 6 or any(w in {"you", "your", "ask", "help", "know", "today"} for w in words):
-                return "GREETING_CAPABILITIES"
+        # 6. Greetings (English & Sinhala/Tamil transliterations)
+        greeting_words = {
+            "hi", "hii", "hiii", "hello", "helloo", "hey", "heyy", "ayubowan",
+            "morning", "afternoon", "evening", "greetings", "yo", "hola", "kohomada", "vanakkam"
+        }
+        if words[0] in greeting_words or any(sub in compact for sub in ("goodmorning", "goodafternoon", "goodevening", "subhadawasak")):
+            if len(words) <= 6 or any(w in {"you", "your", "ask", "help", "know", "today", "there", "agent", "bot"} for w in words):
+                return "GREETING"
 
-        thanks_patterns = [r"\bthank\s+you\b", r"\bthanks\b", r"\bthx\b", r"\bappreciate\s+it\b", r"\bgreat\s+help\b"]
-        if any(re.search(pat, joined) for pat in thanks_patterns):
-            return "THANKS"
-
-        bye_words = {"bye", "goodbye", "see ya", "good night"}
-        if joined in bye_words or words[0] in {"bye", "goodbye"}:
-            return "GOODBYE"
+        # 7. Short conversational acknowledgments ("ok", "okay", "sure", "alright", "nice", "sorry")
+        ack_words = {
+            "ok", "okay", "okk", "k", "kk", "alright", "cool", "nice", "great",
+            "awesome", "noted", "understood", "sure", "fine", "good", "perfect", "super", "sorry", "mybad"
+        }
+        if len(words) <= 4 and all(w in ack_words for w in words):
+            return "ACKNOWLEDGMENT"
 
         return None
-        """
-        Only links previous turn context if the user's message is a short follow-up
-        that explicitly references the previous turn via pronouns ('this', 'it', 'that')
-        or starts with 'and', 'what about', 'how about', 'also'.
-        Prevents bleeding old incident tickets into brand-new questions!
-        """
-        words = re.findall(r"[a-zA-Z]+", user_input.lower())
-        if not words or len(words) > 9:
-            return False
-        if any(w in cls.FOLLOWUP_PRONOUNS for w in words):
-            return True
-        lower_s = user_input.strip().lower()
-        if lower_s.startswith(("and ", "what about", "how about", "also ", "why did")):
-            return True
-        return False
 
     @classmethod
     def _is_true_followup_question(cls, user_input: str) -> bool:
@@ -161,29 +188,33 @@ class SLTMobitelUnifiedAgent:
         t0 = time.perf_counter()
         trace_steps = []
 
-        # Handle conversational greetings, capability questions ("Hello how can you help me today"), thanks, and goodbyes
+        # Handle conversational greetings, capability questions, how-are-you, acknowledgments, thanks, and goodbyes
         smalltalk_type = self._is_conversational_smalltalk(user_input)
         if smalltalk_type:
             if smalltalk_type == "THANKS":
+                reply_text = "You're welcome! Let me know if you need anything else."
+            elif smalltalk_type == "ACKNOWLEDGMENT":
+                reply_text = "Got it. Let me know if you have any other questions."
+            elif smalltalk_type == "HOW_ARE_YOU":
+                reply_text = "I'm doing well, thanks! How can I help you today?"
+            elif smalltalk_type == "GENERAL_SLT_OVERVIEW":
                 reply_text = (
-                    "You're very welcome! 😊 Let me know if you have any other questions about **SLTMobitel packages, "
-                    "USSD self-care codes**, or **network incident diagnostics**."
+                    "**SLTMobitel** is Sri Lanka's national ICT and telecommunications provider, offering "
+                    "Fibre and 4G LTE broadband, PEOTV, mobile voice/data, and enterprise solutions.\n\n"
+                    "- **Website:** `https://www.slt.lk`\n"
+                    "- **Support Hotlines:** `1212` (Fixed / Fibre / PEOTV) | `1717` (Mobile)\n"
+                    "- **Self-Care:** MySLT App (`https://myslt.slt.lk`)"
                 )
             elif smalltalk_type == "GOODBYE":
-                reply_text = "Goodbye! 👋 Have a great day. Reach out anytime you need SLTMobitel or NetOps assistance!"
-            else:
+                reply_text = "Goodbye! Have a great day."
+            elif smalltalk_type == "CAPABILITIES":
                 reply_text = (
-                    "Hello! 👋 I'm the **SLTMobitel AI Assistant**. Here is how I can help you today:\n\n"
-                    "1. **📱 SLTMobitel Customer & Product Support (via AWS KnowledgeBase API):**\n"
-                    "   - Check **Account Balance, Billing & USSD Self-Care Portals** (`#1456#`, `#888#`, `#170#`)\n"
-                    "   - View **4G LTE Home Broadband, Unlimited Flash & PEOTV Packages and Prices**\n"
-                    "   - Check **Mobile Data APN Settings (`mobitel`), SIM Info, Credit Limits & VAS**\n"
-                    "   - Explore **SLTMobitel Enterprise, SME & Cloud Solutions**\n\n"
-                    "2. **🚨 Network Operations (NetOps) Incident Triage (via Local SOP Vector Store):**\n"
-                    "   - Diagnose **Core BGP Optical Power Loss & Link Flaps (`SLT-NET-SOP-042`)**\n"
-                    "   - Troubleshoot **OSPF EXSTART MTU Mismatches (`SLT-NET-SOP-043`)**\n"
-                    "   - Analyze **GPON OLT Feeder Fiber Cuts (`SLT-NET-SOP-044`)** with automatic PII/IP masking."
+                    "I can help with:\n"
+                    "- **Customer & Product Support:** Broadband/PEOTV packages, billing, USSD codes (`#1456#`, `#888#`, `#170#`), APN settings, and basic router troubleshooting.\n"
+                    "- **Network Incident Triage:** Diagnosing BGP optical loss, OSPF MTU mismatches, and GPON fiber faults from incident logs."
                 )
+            else:
+                reply_text = "Hello! How can I help you today?"
 
             in_guard = self.guardrails.evaluate_input_guardrails(user_input, user_input, 0)
             out_guard = {
@@ -204,7 +235,7 @@ class SLTMobitelUnifiedAgent:
                 "intent_route": "CONVERSATIONAL_GREETING",
                 "inference_mode": inference_engine,
                 "has_enough_knowledge": True,
-                "headline": "SLTMobitel AI Assistant",
+                "headline": "SLTMobitel Assistant",
                 "answer_markdown": reply_text,
                 "key_points": [],
                 "draft_handover_summary": "",
@@ -219,14 +250,10 @@ class SLTMobitelUnifiedAgent:
                 "input_guardrail": in_guard,
                 "output_guardrail": out_guard,
                 "eval_metrics": eval_scores,
-                "trace_steps": ["👋 Handled conversational greeting / capability inquiry."],
+                "trace_steps": ["Handled conversational input."],
                 "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
                 "warnings": [],
-                "suggested_followups": [
-                    "What are the SLTMobitel 4G LTE & PEOTV package prices?",
-                    "What USSD codes are available for #1456#, #888#, and #170#?",
-                    "What is the Mobitel APN setting and Credit Limit policy?"
-                ]
+                "suggested_followups": []
             }
 
         # Step 1: Pre-Flight Sanitization ONLY on the current user_input (never count old turns' PII!)
@@ -389,19 +416,6 @@ class SLTMobitelUnifiedAgent:
 
         latency_ms = (time.perf_counter() - t0) * 1000
 
-        if chosen_route in ("NETOPS_INCIDENT", "HYBRID_BOTH"):
-            suggested_followups = [
-                "Show me the read-only CLI verification commands for this router",
-                "Check OSPF EXSTART MTU mismatch SOP steps",
-                "What are the SLTMobitel 4G LTE & PEOTV package prices?"
-            ]
-        else:
-            suggested_followups = [
-                "What are the SLTMobitel 4G LTE & PEOTV package prices?",
-                "What USSD codes are available for #1456#, #888#, and #170#?",
-                "What is the Mobitel APN setting and Credit Limit policy?"
-            ]
-
         return {
             "intent_route": chosen_route,
             "inference_mode": engine_used,
@@ -424,7 +438,7 @@ class SLTMobitelUnifiedAgent:
             "trace_steps": trace_steps,
             "latency_ms": round(latency_ms, 1),
             "warnings": warnings_list,
-            "suggested_followups": suggested_followups
+            "suggested_followups": []
         }
 
     def run_evaluation_benchmark(

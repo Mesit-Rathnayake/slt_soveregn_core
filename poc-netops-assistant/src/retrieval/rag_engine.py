@@ -191,9 +191,7 @@ class SovereignNetOpsRAG:
         # 2. 4G LTE Home Broadband & PeoTV Packages / Pricing
         if any(w in q_lower for w in ("package", "price", "peotv", "peo", "lte", "broadband", "flash", "hbb", "channel")):
             if "Unlimited LTE Flash" in combined or "PEO HD PLUS" in combined:
-                ans = (
-                    "Here are the **SLTMobitel 4G LTE Home Broadband** and **PEOTV** packages available in the KnowledgeBase:"
-                )
+                ans = "Here are the **SLTMobitel 4G LTE Home Broadband** and **PEOTV** packages:"
                 bullets = [
                     "**4G LTE Home Broadband (30 Days):** `20 GB` for **Rs. 535** | **HBB Anytime 899:** `35 GB` for **Rs. 899** | **HBB Anytime 1899:** `75 GB` for **Rs. 1,899**.",
                     "**Unlimited LTE Flash Packages:** **Flash 5** (`5 GB` at standard LTE speed, then `1 Mbps` unlimited) | **Flash 10** (**Rs. 4,090** — `10 GB` at standard LTE speed, then `1 Mbps` unlimited).",
@@ -204,9 +202,7 @@ class SovereignNetOpsRAG:
         # 3. APN / SIM / Credit Limit / Value Added Services (VAS)
         if any(w in q_lower for w in ("apn", "sim", "credit limit", "vas", "value added", "mtunes", "gprs")):
             if "APN" in combined or "credit limit" in combined.lower():
-                ans = (
-                    "Here are the **SLTMobitel Mobile Data (APN), SIM, Credit Limit, and VAS** details from the KnowledgeBase:"
-                )
+                ans = "Here are the **SLTMobitel Mobile Data (APN), SIM, Credit Limit, and VAS** details:"
                 bullets = [
                     "**Mobile Data APN Setting:** Set your handset GPRS/Mobile Data APN to **`mobitel`**.",
                     "**Triple-Cut SIM Card:** SLTMobitel provides a 3-in-1 SIM (Standard, Micro, and Nano SIM) to fit any handset.",
@@ -220,7 +216,7 @@ class SovereignNetOpsRAG:
             if "info@mobitel.lk" in combined or "branch-locator" in combined:
                 ans = (
                     "You can contact **SLTMobitel Customer Support**, submit payment receipts for logged complaints, "
-                    "or locate the nearest SLT branch using the official channels below:"
+                    "or locate the nearest SLT branch using the channels below:"
                 )
                 bullets = [
                     "**Hotline:** Dial **`1717`** to log a service request or inquiry.",
@@ -233,47 +229,40 @@ class SovereignNetOpsRAG:
         if any(w in q_lower for w in ("enterprise", "business", "sme", "wholesale", "starlink", "cloud", "cyber")):
             if "Enterprise Solutions" in combined or "SME" in combined:
                 ans = (
-                    "**SLTMobitel Business & Enterprise Solutions** provide tailored ICT services for SMEs, "
+                    "**SLTMobitel Business & Enterprise Solutions** provide ICT services for SMEs, "
                     "Micro Businesses, Enterprises, and Wholesale partners:"
                 )
                 bullets = [
                     "**Core Offerings:** Connectivity, Cloud Services, Cyber Security, Voice & Collaboration, AI Portfolio, and Digital & Managed Services.",
-                    "**SME & Enterprise Focus:** Bespoke, business-grade ICT infrastructure designed to scale local and global operations."
+                    "**SME & Enterprise Focus:** Business-grade ICT infrastructure designed to scale local and global operations."
                 ]
                 return ans, bullets
 
         # 6. Router / Wi-Fi / Broadband Basic Troubleshooting Steps
         if any(w in q_lower for w in ("router", "restart", "wifi", "wi-fi", "wlan", "cable", "slow", "disconnect", "connection", "internet")):
             # If the user is reporting a follow-up failure (e.g., "the restart button does not do anything" / "still not working"),
-            # do NOT repeat the basic 4 steps — explain that the KB only has the basic restart check and advise fault escalation!
+            # do NOT repeat the basic 4 steps — advise power-cycling via wall socket and fault escalation!
             unresolved_signals = (
                 "doesnot", "does not", "doesn't", "did not", "didn't", "not working",
                 "nothing happens", "still", "already tried", "broken", "stuck", "dead",
                 "do anything", "won't", "wont", "cannot", "can't"
             )
             if any(sig in q_lower for sig in unresolved_signals):
-                ans = (
-                    "I don't have deeper hardware-repair steps for a non-responsive router button in the current "
-                    "SLTMobitel KnowledgeBase (which only covers the initial 4-step power, cable, WLAN, and restart check). "
-                    "Since the router button is not responding:"
-                )
+                ans = "If the router button is not responding, try the following steps:"
                 bullets = [
                     "**Power-Cycle via Wall Socket:** Turn off the main wall power switch (or unplug the power adapter) for **30 seconds**, then plug it back in.",
                     "**Avoid the Pinhole 'Reset' Button:** Do **not** hold the recessed pinhole *Reset* button, as that erases your SLT Fibre/4G PPPoE configuration.",
-                    "**Log a Hardware Fault / CPE Replacement:** Call **`1212`** (SLT Fixed/Fibre) or **`1717`** (Mobitel), or report a fault via the **MySLT App** so a technician can inspect or replace the faulty router."
+                    "**Log a Hardware Fault / Replacement:** Call **`1212`** (SLT Fixed/Fibre) or **`1717`** (Mobitel), or report a fault via the **MySLT App** so a technician can inspect or replace the router."
                 ]
                 return ans, bullets
 
             if any(k in combined.lower() for k in ("restart router", "wlan", "cables are properly connected", "wi-fi")):
-                ans = (
-                    "To troubleshoot or restart your **SLTMobitel Home Broadband Router / Wi-Fi connection**, "
-                    "follow these steps from the SLTMobitel Support KnowledgeBase:"
-                )
+                ans = "To troubleshoot or restart your router and Wi-Fi connection:"
                 bullets = [
                     "**1. Check Router Power:** Verify that the router is plugged in and powered on.",
                     "**2. Inspect Cable Connections:** Check that all power, telephone/Fibre patch cords, and Ethernet cables are securely connected.",
-                    "**3. Verify Wi-Fi / WLAN Status:** Check if the router's **Wi-Fi (WLAN)** indicator LED is on. If not, press the **Wi-Fi / WLAN button** on the router to turn it on.",
-                    "**4. Restart the Router:** Power off the router, wait ~15–30 seconds, and switch it back on to refresh your connection (or call **`1212` / `1717`** if the fault persists)."
+                    "**3. Verify Wi-Fi / WLAN Status:** Check if the router's **Wi-Fi (WLAN)** indicator light is on. If not, press the **Wi-Fi / WLAN button** on the router to turn it on.",
+                    "**4. Restart the Router:** Power off the router, wait 15–30 seconds, and switch it back on (or call **`1212` / `1717`** if the issue persists)."
                 ]
                 return ans, bullets
 
@@ -289,7 +278,7 @@ class SovereignNetOpsRAG:
                     if not re.match(r"^\d+\.", s):
                         s = f"• {s}"
                     cleaned_steps.append(s)
-            return "Here are the recommended steps from the SLTMobitel KnowledgeBase:", cleaned_steps[:6]
+            return "Here are the recommended steps:", cleaned_steps[:6]
 
         lines = [ln.strip(" ,\"'•~") for ln in raw_top.splitlines() if ln.strip(" ,\"'•~")]
         if not lines:
