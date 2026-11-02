@@ -12,7 +12,8 @@
 | **High Licensing Cost (IBM Sovereign Core)** | Acquiring dedicated IBM Sovereign Core & bare-metal OpenShift entitlements is cost-prohibitive for PoC/MVP deployment. | High | **Resolved via AWS Pivot:** Replaced IBM Sovereign Core with serverless **AWS CloudFormation, Amazon CloudFront, API Gateway (`/prod/retrieve`), and Amazon Bedrock**. |
 | **Out-of-Scope Hallucinations & Noisy Scrapes** | Vector DB returns low-score or multilingual CSV/JSON chunks when asked an unknown question. | High | Enforce **Relevance Thresholding & Honest Abstention** (`"I don't have enough knowledge..."`), automatic CSV/JSON chunk cleaning (`clean_raw_kb_text`), and language-aware reranking (`_rerank_chunk_score`). |
 | **Unauthorized Autonomous Action** | The assistant could modify live production network configurations. | Critical | **Read-only advisory boundary**: provide no network-device credentials or write-capable integrations. All actions require human engineer review. |
-| **Origin Latency (`us-east-1`)** | Cross-region HTTPS calls from Sri Lanka to `us-east-1` take `~1–5s`. | Medium | **Amazon CloudFront Edge Caching (`cloudfront_gateway.py`)** caches repeat KB queries at the edge (`<5ms` cache hit) and injects `x-auth-secret` at the origin boundary. |
+| **Origin Latency (`us-east-1`)** | Cross-region HTTPS calls from Sri Lanka to `us-east-1` take `~1–5s`. | Medium | **Amazon CloudFront Edge Caching (`cloudfront_gateway.py`)** caches repeat KB queries at the edge (`<5ms` cache hit) and injects custom authentication headers at the origin boundary. |
+| **API Key & Endpoint Exposure** | Exposing API endpoints, custom headers, or cloud keys in the frontend UI or public GitHub repository. | High | **Strict Secret Isolation:** Removed all secret/header/endpoint inputs from the UI (`app.py`) and repository; credentials load exclusively from git-ignored `.env` or **Streamlit Cloud Secrets (`st.secrets`)**. |
 
 ---
 
