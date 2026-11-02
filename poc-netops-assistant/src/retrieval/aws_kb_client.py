@@ -125,15 +125,15 @@ class SLTMobitelCloudKBClient:
         if query_ascii_ratio > 0.90 and content_ascii_ratio < 0.60:
             score -= 0.18
 
-        # Boost exact keyword overlap (ignoring generic location/question stopwords)
+        # Boost exact & stem keyword overlap (ignoring generic location/question stopwords)
         stopwords = {
             "what", "whats", "how", "hows", "when", "where", "who", "whos", "why", "which",
             "can", "the", "and", "for", "with", "are", "was", "were", "will", "from",
             "slt", "mobitel", "sltmobitel", "sri", "lanka", "lankan", "colombo",
-            "visit", "island", "world", "way", "your", "more"
+            "visit", "island", "world", "way", "your", "more", "see", "view", "show", "find"
         }
-        q_words = {w for w in re.findall(r"[a-zA-Z0-9]{3,}", query.lower()) if w not in stopwords}
-        c_words = set(re.findall(r"[a-zA-Z0-9]{3,}", cleaned_content.lower()))
+        q_words = {w[:5] if len(w) >= 6 else w.rstrip("s") for w in re.findall(r"[a-zA-Z0-9]{3,}", query.lower()) if w not in stopwords}
+        c_words = {w[:5] if len(w) >= 6 else w.rstrip("s") for w in re.findall(r"[a-zA-Z0-9]{3,}", cleaned_content.lower())}
         overlap_count = len(q_words.intersection(c_words))
         score += min(overlap_count * 0.04, 0.16)
 

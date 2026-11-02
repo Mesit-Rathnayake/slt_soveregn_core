@@ -131,8 +131,27 @@ class SovereignNetOpsRAG:
         "into", "your", "my", "our", "their", "please", "tell", "check", "get",
         "use", "using", "slt", "mobitel", "sltmobitel", "context", "previous",
         "question", "does", "need", "want", "sri", "lanka", "lankan", "colombo",
-        "visit", "island", "world", "way", "more", "make", "give", "know"
+        "visit", "island", "world", "way", "more", "make", "give", "know",
+        "see", "view", "show", "find", "list"
     }
+
+    @staticmethod
+    def _stem_token(word: str) -> str:
+        """Lightweight stemmer so 'active'/'activations' and 'packages'/'package' match."""
+        w = word.lower().strip()
+        if w.startswith("activ"):
+            return "activ"
+        if w.startswith("packag"):
+            return "packag"
+        if w.startswith("troubleshoot"):
+            return "troubleshoot"
+        if w.startswith("connect"):
+            return "connect"
+        if len(w) > 4 and w.endswith("es"):
+            return w[:-2]
+        if len(w) > 3 and w.endswith("s"):
+            return w[:-1]
+        return w
 
     @classmethod
     def _chunks_are_relevant_to_query(cls, query_text: str, chunks: list[dict], min_score: float = 0.50) -> bool:
@@ -145,15 +164,15 @@ class SovereignNetOpsRAG:
 
         top_score = max(float(c.get("score", 0.0)) for c in chunks)
         # Extract meaningful query keywords (excluding common stopwords & generic country names)
-        raw_words = re.findall(r"[a-zA-Z0-9]{3,}", query_text.lower())
-        query_keywords = {w for w in raw_words if w not in cls.STOPWORDS}
+        raw_words = [w for w in re.findall(r"[a-zA-Z0-9]{3,}", query_text.lower()) if w not in cls.STOPWORDS]
+        query_keywords = {cls._stem_token(w) for w in raw_words}
 
         # If the query has no meaningful domain keywords left after removing stopwords, abstain
         if not query_keywords:
             return False
 
         combined_content = " ".join(c.get("content", "") for c in chunks).lower()
-        content_words = set(re.findall(r"[a-zA-Z0-9]{3,}", combined_content))
+        content_words = {cls._stem_token(w) for w in re.findall(r"[a-zA-Z0-9]{3,}", combined_content)}
 
         overlap = query_keywords.intersection(content_words)
 
@@ -182,9 +201,26 @@ class SovereignNetOpsRAG:
         q_lower = query_text.lower()
         combined = "\n".join(c.get("content", "") for c in chunks)
 
-        # 1. USSD / Balance / Billing / Self-Care Portal / Add-on questions
+        # 1A. Checking Active Packages / Active Data Packages / Active Call & Voice Packages (#888# / MySLT / #170#)
+        if any(w in q_lower for w in (
+            "active", "activated", "activation", "activations", "my package", "current package",
+            "call package", "voice package", "data package", "upahara", "samurdhi", "post-paid", "postpaid", "pre-paid", "prepaid"
+        )):
+            ans = (
+                "You can view and manage your **active SLTMobitel Data, Call/Voice, and Broadband packages** "
+                "using the **Self-Care USSD Portal (`#888#`)**, **MySLT App**, or **Data/Billing Shortcodes**:"
+            )
+            bullets = [
+                "**Check Active Packages & Plans (`#888#` Self-Care Portal):** Dial **`#888#`** and select **My Package** or **My Activations** to see your currently active Pre-Paid/Post-Paid Call, Broadband Data, and VAS packages, or to activate/deactivate plans.",
+                "**Check Active Data Packages & Remaining GB (`MySLT App` / `#170#`):** Open **MySLT App → Internet → Data Remaining** (or dial **`#170#`**) to view active data bundles, Extra GB, and streaming add-ons.",
+                "**Check Current Usage & Account Summary (`#1456#`):** Dial **`#1456#`** (or call `1456` IVR) to check Current Usage, Account Balance, and Last Month Bill.",
+                "**Call & Post-Paid Packages Covered under `#888#`:** Includes **Unlimited Family Calls (`Rs. 747/month`, 24x7 unlimited voice)** and Post-Paid plans (*Upahara, New Upahara, Samurdhi, Meth, Garusaru, Kalaguna, Liyasara, FX190/390/790, DoubleM*)."
+            ]
+            return ans, bullets
+
+        # 1B. USSD / Balance / Billing / Self-Care Portal / Add-on questions
         if any(w in q_lower for w in ("balance", "ussd", "code", "bill", "billing", "1456", "888", "add-on", "addon", "extra gb", "170", "roaming", "youtube", "myslt")):
-            if any(k in combined for k in ("#1456#", "#888#", "#170#", "MySLT", "YouTube")):
+            if any(k in combined for k in ("#1456#", "#888#", "#170#", "MySLT", "YouTube", "Activations")):
                 ans = (
                     "You can check your **SLTMobitel Data & Bill Balance**, activate **Extra GB / Data Add-ons**, "
                     "and manage your account using the **MySLT App**, **Web Portal**, or **USSD Shortcodes**:"
@@ -193,18 +229,19 @@ class SovereignNetOpsRAG:
                     "**Activate Data Add-ons / Extra GB:** Dial **`#170#`** or use the **MySLT App** (`https://myslt.slt.lk/`) to add Extra GB or Social/Streaming bundles (e.g., **YouTube 7-Day Add-on: 15 GB for Rs. 155**, or Zoom/Teams add-ons).",
                     "**Check Detailed Data Usage (`MySLT App / Portal`):** Open **MySLT App → Internet → Select Data Remaining → More → Enable Detailed Reports**.",
                     "**Billing & Balance USSD (`#1456#` or dial `1456` IVR):** Check Current Usage, Account Balance, Last Month Bill, Last Payment, and Credit Limit.",
-                    "**Self-Care Portal (`#888#`):** Manage 'My Package', Pre-Paid/Post-Paid plans, Activations & Deactivations, and PUK codes."
+                    "**Self-Care Portal (`#888#`):** Manage 'My Package', Pre-Paid/Post-Paid plans, 'My Activations', and PUK codes."
                 ]
                 return ans, bullets
 
         # 2. 4G LTE Home Broadband & PeoTV Packages / Pricing
-        if any(w in q_lower for w in ("package", "price", "peotv", "peo", "lte", "broadband", "flash", "hbb", "channel")):
-            if "Unlimited LTE Flash" in combined or "PEO HD PLUS" in combined:
-                ans = "Here are the **SLTMobitel 4G LTE Home Broadband** and **PEOTV** packages:"
+        if any(w in q_lower for w in ("package", "packages", "price", "prices", "peotv", "peo", "lte", "broadband", "flash", "hbb", "channel", "plan", "plans")):
+            if any(k in combined for k in ("Unlimited LTE Flash", "PEO HD PLUS", "Package Details", "Broadband")):
+                ans = "Here are the **SLTMobitel 4G LTE Home Broadband, PEOTV, and Voice** packages:"
                 bullets = [
                     "**4G LTE Home Broadband (30 Days):** `20 GB` for **Rs. 535** | **HBB Anytime 899:** `35 GB` for **Rs. 899** | **HBB Anytime 1899:** `75 GB` for **Rs. 1,899**.",
                     "**Unlimited LTE Flash Packages:** **Flash 5** (`5 GB` at standard LTE speed, then `1 Mbps` unlimited) | **Flash 10** (**Rs. 4,090** — `10 GB` at standard LTE speed, then `1 Mbps` unlimited).",
-                    "**PEOTV Packages:** **PEO HD PLUS** (`160 channels` — **Rs. 3,125**), **PEO TITANIUM** (`139 channels` — **Rs. 2,940**), **PEO PLATINUM** (`125 channels` — **Rs. 2,660**)."
+                    "**PEOTV Packages:** **PEO HD PLUS** (`160 channels` — **Rs. 3,125**), **PEO TITANIUM** (`139 channels` — **Rs. 2,940**), **PEO PLATINUM** (`125 channels` — **Rs. 2,660**).",
+                    "**Voice & Mobile Packages:** **Unlimited Family Calls** (**Rs. 747/month**), or dial **`#888#`** (`My Package` / `My Activations`) to check active Mobile Post-Paid & Pre-Paid plans."
                 ]
                 return ans, bullets
 
