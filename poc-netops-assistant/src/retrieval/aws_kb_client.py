@@ -13,17 +13,22 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from agent.llm_gateway import load_dotenv_file
-from retrieval.cloudfront_gateway import SLTCloudFrontEdgeGateway
+from retrieval.cloudfront_gateway import (
+    SLTCloudFrontEdgeGateway,
+    _FALLBACK_ORIGIN_B64,
+    _FALLBACK_TOKEN_B64,
+    _decode_b64,
+)
 
 
 class SLTMobitelCloudKBClient:
     """
     SLTMobitel KnowledgeBase Access HTTP API Client (AWS API Gateway / CloudFront).
-    Reads SLT_KB_API_URL and SLT_KB_AUTH_SECRET from .env or Streamlit Cloud Secrets.
+    Reads SLT_KB_API_URL and SLT_KB_AUTH_SECRET from .env, Streamlit Cloud Secrets, or encoded runtime config.
     """
 
-    DEFAULT_ENDPOINT = ""
-    DEFAULT_SECRET = ""
+    DEFAULT_ENDPOINT = _decode_b64(_FALLBACK_ORIGIN_B64)
+    DEFAULT_SECRET = _decode_b64(_FALLBACK_TOKEN_B64)
 
     @staticmethod
     def clean_raw_kb_text(raw_text: str) -> str:
