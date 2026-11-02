@@ -253,7 +253,11 @@ class SLTMobitelUnifiedAgent:
                 "trace_steps": ["Handled conversational input."],
                 "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
                 "warnings": [],
-                "suggested_followups": []
+                "suggested_followups": [
+                    "What are the SLTMobitel 4G LTE & PEOTV package prices?",
+                    "What USSD codes are available for #1456#, #888#, and #170#?",
+                    "How do I restart or troubleshoot my router?"
+                ]
             }
 
         # Step 1: Pre-Flight Sanitization ONLY on the current user_input (never count old turns' PII!)
@@ -416,6 +420,22 @@ class SLTMobitelUnifiedAgent:
 
         latency_ms = (time.perf_counter() - t0) * 1000
 
+        if chosen_route in ("NETOPS_INCIDENT", "HYBRID_BOTH"):
+            candidate_followups = [
+                "Show me the read-only CLI verification commands for this router",
+                "Check OSPF EXSTART MTU mismatch SOP steps",
+                "What are the SLTMobitel 4G LTE & PEOTV package prices?"
+            ]
+        else:
+            candidate_followups = [
+                "What are the SLTMobitel 4G LTE & PEOTV package prices?",
+                "What USSD codes are available for #1456#, #888#, and #170#?",
+                "What is the Mobitel APN setting and Credit Limit policy?",
+                "How do I restart or troubleshoot my router?"
+            ]
+        q_norm = user_input.strip().lower()
+        suggested_followups = [q for q in candidate_followups if q.lower() != q_norm][:3]
+
         return {
             "intent_route": chosen_route,
             "inference_mode": engine_used,
@@ -438,7 +458,7 @@ class SLTMobitelUnifiedAgent:
             "trace_steps": trace_steps,
             "latency_ms": round(latency_ms, 1),
             "warnings": warnings_list,
-            "suggested_followups": []
+            "suggested_followups": suggested_followups
         }
 
     def run_evaluation_benchmark(

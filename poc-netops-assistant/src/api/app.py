@@ -64,7 +64,7 @@ audit_log_path = BASE_DIR / "data" / "audit_trail.jsonl"
 
 
 @st.cache_resource
-def get_agent_and_governance(_version: str = "v6.6"):
+def get_agent_and_governance(_version: str = "v6.7"):
     agent_inst = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
     gov_inst = SovereignGovernanceManager(audit_log_path=audit_log_path)
     return agent_inst, gov_inst
@@ -198,6 +198,14 @@ def render_assistant_message(turn: dict, turn_index: int, is_latest: bool = Fals
                     st.markdown(f"**{idx}. `{ch['doc_id']}`** *(Score: `{sc}`)*")
                     st.caption(ch["content"])
 
+    if is_latest and turn.get("suggested_followups"):
+        f_cols = st.columns(len(turn["suggested_followups"]))
+        for i, follow_q in enumerate(turn["suggested_followups"]):
+            with f_cols[i]:
+                if st.button(follow_q, key=f"followup_{turn_index}_{i}", use_container_width=True):
+                    queue_prompt(follow_q, route="AUTO")
+                    st.rerun()
+
 
 # ---------------------------------------------------------------------------
 # MAIN CHAT INTERFACE
@@ -207,6 +215,28 @@ st.markdown("### SLTMobitel Assistant")
 if not st.session_state.chat_history and not st.session_state.pending_prompt:
     with st.chat_message("assistant"):
         st.markdown("Hello! How can I help you today?")
+        s1, s2, s3, s4 = st.columns(4)
+        with s1:
+            if st.button("Balance & USSD Codes (#1456# / #888#)", use_container_width=True):
+                queue_prompt("How do I check my billing, account balance, and USSD self-care codes?", "AWS_CLOUD_KB")
+                st.rerun()
+        with s2:
+            if st.button("4G LTE & PEOTV Package Prices", use_container_width=True):
+                queue_prompt("What are the SLTMobitel 4G LTE Home Broadband and PEOTV packages and prices?", "AWS_CLOUD_KB")
+                st.rerun()
+        with s3:
+            if st.button("Router & Wi-Fi Troubleshooting", use_container_width=True):
+                queue_prompt("How do I restart or troubleshoot my router?", "AWS_CLOUD_KB")
+                st.rerun()
+        with s4:
+            if st.button("Diagnose BGP Optical Loss (-21.4 dBm)", use_container_width=True):
+                queue_prompt(
+                    "INCIDENT TICKET: INC-2026-1042 | AFFECTED NODE: SLT-CORE-PE-CMB-01 (172.16.45.128)\n"
+                    "Contact: kasun@slt.com.lk (+94 71 234 5678). BGP-5-ADJCHANGE link flapped 7 times. "
+                    "Optical Rx Power measured at -21.4 dBm.",
+                    "NETOPS_INCIDENT"
+                )
+                st.rerun()
 
 # Render Conversation Thread
 total_turns = len(st.session_state.chat_history)
