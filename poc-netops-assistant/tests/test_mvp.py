@@ -11,6 +11,7 @@ if str(SRC_DIR) not in sys.path:
 from ingestion.sanitizer import SovereignDataSanitizer
 from retrieval.rag_engine import SovereignNetOpsRAG
 from retrieval.aws_kb_client import SLTMobitelCloudKBClient
+from mcp.slt_mcp_server import SLTMCPToolServer
 from agent.guardrails_evals import SovereignGuardrailsAndEvals
 from agent.orchestrator import SLTMobitelUnifiedAgent
 
@@ -201,6 +202,42 @@ def test_guardrails_block_prompt_injection_and_score_evals():
         )
         assert cap_res["has_enough_knowledge"] is False
         assert "don't have enough knowledge" in cap_res["answer_markdown"].lower()
+        assert cap_res["mcp_tool_called"] == "slt_query_cloud_kb"
+
+
+def test_mcp_server_tools_and_jsonrpc_protocol():
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    mcp = SLTMCPToolServer(manuals_dir=manuals_dir)
+
+    # 1. MCP JSON-RPC initialize handshake
+    init_resp = mcp.handle_jsonrpc_request({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    assert init_resp["result"]["protocolVersion"] == "2024-11-05"
+    assert init_resp["result"]["serverInfo"]["name"] == "sltmobitel-sovereign-mcp-server"
+
+    # 2. MCP tools/list
+    tools_resp = mcp.handle_jsonrpc_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    tool_names = [t["name"] for t in tools_resp["result"]["tools"]]
+    assert "slt_sanitize_pii" in tool_names
+    assert "slt_query_cloud_kb" in tool_names
+    assert "slt_diagnose_netops_incident" in tool_names
+    assert "slt_cloudfront_cache_status" in tool_names
+
+    # 3. MCP tools/call -> slt_sanitize_pii
+    call_resp = mcp.handle_jsonrpc_request({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "slt_sanitize_pii",
+            "arguments": {"raw_text": "Customer 071 234 5678 on IP 172.16.45.128"}
+        }
+    })
+    assert call_resp["result"]["isError"] is False
+    assert call_resp["result"]["structuredContent"]["redactions_applied"] >= 2
+
+    # 4. MCP resources/list
+    res_list = mcp.handle_jsonrpc_request({"jsonrpc": "2.0", "id": 4, "method": "resources/list"})
+    assert len(res_list["result"]["resources"]) >= 3
 
 
 

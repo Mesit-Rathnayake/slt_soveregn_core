@@ -13,6 +13,7 @@ if str(SRC_DIR) not in sys.path:
 from ingestion.sanitizer import SovereignDataSanitizer
 from retrieval.rag_engine import SovereignNetOpsRAG
 from agent.guardrails_evals import SovereignGuardrailsAndEvals
+from mcp.slt_mcp_server import SLTMCPToolServer
 
 
 class SLTMobitelUnifiedAgent:
@@ -39,6 +40,11 @@ class SLTMobitelUnifiedAgent:
         self.sanitizer = SovereignDataSanitizer()
         self.rag = SovereignNetOpsRAG(manuals_dir=manuals_dir, enable_embeddings=enable_embeddings)
         self.guardrails = SovereignGuardrailsAndEvals()
+        self.mcp_server = SLTMCPToolServer(
+            manuals_dir=manuals_dir,
+            sanitizer=self.sanitizer,
+            rag=self.rag
+        )
 
     def classify_intent(self, text: str, route_override: str = "AUTO") -> str:
         if route_override in ("AWS_CLOUD_KB", "NETOPS_INCIDENT", "HYBRID_BOTH"):
@@ -260,12 +266,13 @@ class SLTMobitelUnifiedAgent:
                 ]
             }
 
-        # Step 1: Pre-Flight Sanitization ONLY on the current user_input (never count old turns' PII!)
-        san_res = self.sanitizer.sanitize_text(user_input)
+        # Step 1: Pre-Flight Sanitization via MCP Tool (`slt_sanitize_pii`) ONLY on current user_input
+        mcp_san = self.mcp_server.call_tool("slt_sanitize_pii", {"raw_text": user_input})
+        san_res = mcp_san["structuredContent"]
         clean_user_input = san_res["sanitized_text"]
         redactions = san_res["redactions_applied"]
         trace_steps.append(
-            f"🛡️ **Step 1 (Data Sanitizer):** Scanned input and masked `{redactions}` sensitive PII/IP/credential fields."
+            f"Step 1 (MCP Tool `slt_sanitize_pii`): Masked `{redactions}` sensitive PII/IP/credential fields."
         )
 
         # Build conversational context window ONLY if the user is genuinely referring to the previous turn
@@ -326,22 +333,27 @@ class SLTMobitelUnifiedAgent:
         warnings_list = []
         if chosen_route in ("NETOPS_INCIDENT", "HYBRID_BOTH"):
             include_kb = (chosen_route == "HYBRID_BOTH")
+            mcp_tool_used = "slt_diagnose_netops_incident"
             trace_steps.append(
-                "📚 **Step 3 (Retrieval Tool):** Queried Local NetOps SOP Vector Store"
-                + (" + SLTMobitel AWS KnowledgeBase API (`/prod/retrieve`)." if include_kb else ".")
+                f"Step 3 (MCP Tool `{mcp_tool_used}`): Queried Local NetOps SOP Store"
+                + (" + SLTMobitel AWS KnowledgeBase API." if include_kb else ".")
             )
-            rep = self.rag.analyze_incident(
-                clean_text,
-                mode_override=inference_engine,
-                ollama_model=ollama_model,
-                gemini_api_key=gemini_api_key,
-                bedrock_model=bedrock_model,
-                aws_region=aws_region,
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                include_aws_kb=include_kb,
-                kb_secret_override=kb_secret_override
+            mcp_rep = self.mcp_server.call_tool(
+                mcp_tool_used,
+                {
+                    "sanitized_ticket": clean_text,
+                    "inference_engine": inference_engine,
+                    "ollama_model": ollama_model,
+                    "gemini_api_key": gemini_api_key,
+                    "bedrock_model": bedrock_model,
+                    "aws_region": aws_region,
+                    "aws_access_key_id": aws_access_key_id,
+                    "aws_secret_access_key": aws_secret_access_key,
+                    "include_aws_kb": include_kb,
+                    "kb_secret_override": kb_secret_override
+                }
             )
+            rep = mcp_rep["structuredContent"]
             if rep.get("llm_fallback_warning"):
                 warnings_list.append(rep["llm_fallback_warning"])
 
@@ -358,22 +370,27 @@ class SLTMobitelUnifiedAgent:
             handover_md = rep.get("draft_handover_summary", "")
             has_knowledge = "insufficient telemetry" not in severity.lower()
         else:
+            mcp_tool_used = "slt_query_cloud_kb"
             trace_steps.append(
-                f"☁️ **Step 3 (AWS CloudFront/API Gateway Tool):** Invoked `POST /prod/retrieve` (top_k={top_k}) with `x-auth-secret`."
+                f"Step 3 (MCP Tool `{mcp_tool_used}`): Queried SLTMobitel CloudFront / API Gateway KnowledgeBase (top_k={top_k})."
             )
-            rep = self.rag.answer_kb_question(
-                sanitized_query=clean_text,
-                top_k=top_k,
-                mode_override=inference_engine,
-                ollama_model=ollama_model,
-                gemini_api_key=gemini_api_key,
-                bedrock_model=bedrock_model,
-                aws_region=aws_region,
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                kb_secret_override=kb_secret_override,
-                kb_endpoint_override=kb_endpoint_override
+            mcp_rep = self.mcp_server.call_tool(
+                mcp_tool_used,
+                {
+                    "sanitized_query": clean_text,
+                    "top_k": top_k,
+                    "inference_engine": inference_engine,
+                    "ollama_model": ollama_model,
+                    "gemini_api_key": gemini_api_key,
+                    "bedrock_model": bedrock_model,
+                    "aws_region": aws_region,
+                    "aws_access_key_id": aws_access_key_id,
+                    "aws_secret_access_key": aws_secret_access_key,
+                    "kb_secret_override": kb_secret_override,
+                    "kb_endpoint_override": kb_endpoint_override
+                }
             )
+            rep = mcp_rep["structuredContent"]
             if rep.get("kb_api_error"):
                 warnings_list.append(rep["kb_api_error"])
             if rep.get("llm_fallback_warning"):
@@ -438,6 +455,7 @@ class SLTMobitelUnifiedAgent:
 
         return {
             "intent_route": chosen_route,
+            "mcp_tool_called": mcp_tool_used,
             "inference_mode": engine_used,
             "has_enough_knowledge": has_knowledge,
             "headline": headline,

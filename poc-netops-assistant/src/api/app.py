@@ -12,12 +12,14 @@ if str(SRC_DIR) not in sys.path:
 import retrieval.cloudfront_gateway as cf_mod
 import retrieval.aws_kb_client as aws_kb_mod
 import retrieval.rag_engine as rag_mod
+import mcp.slt_mcp_server as mcp_mod
 import agent.guardrails_evals as guard_mod
 import agent.orchestrator as orch_mod
 
 importlib.reload(cf_mod)
 importlib.reload(aws_kb_mod)
 importlib.reload(rag_mod)
+importlib.reload(mcp_mod)
 importlib.reload(guard_mod)
 importlib.reload(orch_mod)
 
@@ -64,7 +66,7 @@ audit_log_path = BASE_DIR / "data" / "audit_trail.jsonl"
 
 
 @st.cache_resource
-def get_agent_and_governance(_version: str = "v7.0"):
+def get_agent_and_governance(_version: str = "v7.1"):
     agent_inst = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
     gov_inst = SovereignGovernanceManager(audit_log_path=audit_log_path)
     return agent_inst, gov_inst
@@ -147,8 +149,10 @@ with st.sidebar:
             f"Edge Cache: `{cf_metrics['cache_hits']}` Hits | "
             f"`{cf_metrics['cache_misses']}` Origin Fetches"
         )
+        mcp_tools = [t["name"] for t in agent.mcp_server.list_tools()]
+        st.caption(f"MCP Server (`{agent.mcp_server.PROTOCOL_VERSION}`): `{len(mcp_tools)}` tools active ({', '.join(f'`{t}`' for t in mcp_tools)})")
         if st.button("Clear Cache", use_container_width=True):
-            agent.rag.aws_kb_client.cloudfront.clear_edge_cache()
+            agent.mcp_server.call_tool("slt_cloudfront_cache_status", {"action": "invalidate"})
             st.success("Cache cleared.")
 
         show_dev_details = st.checkbox(
@@ -184,9 +188,10 @@ def render_assistant_message(turn: dict, turn_index: int, is_latest: bool = Fals
 
     if show_dev_details:
         with st.expander("Diagnostics & Retrieved Sources"):
+            mcp_used = turn.get("mcp_tool_called", "N/A")
             st.caption(
-                f"Route: `{turn['intent_route']}` | Engine: `{turn['inference_mode']}` | "
-                f"Latency: `{turn['latency_ms']:.0f} ms`"
+                f"Route: `{turn['intent_route']}` | MCP Tool: `{mcp_used}` | "
+                f"Engine: `{turn['inference_mode']}` | Latency: `{turn['latency_ms']:.0f} ms`"
             )
             if turn.get("draft_handover_summary"):
                 st.markdown("**Shift Handover Summary:**")

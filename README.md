@@ -49,8 +49,10 @@ You can paste raw NOC trouble tickets (or load sample tickets from the sidebar) 
     * `cloudfront_gateway.py` — **Amazon CloudFront Edge Gateway** with TTL response caching and origin custom header injection.
     * `aws_kb_client.py` — HTTP API client for the **SLTMobitel KnowledgeBase Access API** (`/prod/retrieve`) with CSV/JSON chunk cleaning and English keyword reranking.
     * `rag_engine.py` — Dual RAG engine combining the SLTMobitel AWS KnowledgeBase API and local NetOps SOP manuals.
+  * `src/mcp/`
+    * `slt_mcp_server.py` — **Model Context Protocol (MCP) Server (`2024-11-05` JSON-RPC 2.0)** exposing `slt_sanitize_pii`, `slt_query_cloud_kb`, `slt_diagnose_netops_incident`, and `slt_cloudfront_cache_status` as MCP tools (`tools/list`, `tools/call`) alongside SOP manual resources (`resources/list`, `resources/read`).
   * `src/agent/`
-    * `orchestrator.py` — Unified Conversational Agent (`SLTMobitelUnifiedAgent`) with intent routing, smalltalk handling, and follow-up context tracking.
+    * `orchestrator.py` — Unified Conversational Agent (`SLTMobitelUnifiedAgent`) dispatching tools via the **MCP Server** with intent routing, smalltalk handling, and follow-up context tracking.
     * `guardrails_evals.py` — Input/output perimeter guardrails (prompt injection blocking, read-only CLI safety) and 4-pillar RAG evaluation engine.
     * `llm_gateway.py` — Cloud LLM gateway supporting **AWS Bedrock (`boto3`)** and **Google Gemini**, with automatic `.env` and `st.secrets` loading.
     * `governance.py` — Role-Based Access Control (RBAC) and immutable JSONL audit trail (`audit_trail.jsonl`).
