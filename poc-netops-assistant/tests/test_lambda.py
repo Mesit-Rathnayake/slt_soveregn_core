@@ -178,10 +178,16 @@ def test_voice_agent_stt_and_tts_helpers():
     va = SLTMobitelVoiceAgent()
     empty_res = va.transcribe_audio_bytes(b"")
     assert empty_res["success"] is False
-    spoken = va.format_for_speech("Dial `#888#` or check Rs. 1,500 on 1212.")
+    spoken = va.format_for_speech(
+        "Dial `#888#` or check Rs. 1,500 at -21.4 dBm (10 Mbps) on 1212.",
+        key_points=["1. First action.", "2. Second action.", "3. Third action."]
+    )
     assert "hash 8 8 8 hash" in spoken
     assert "Rupees" in spoken
+    assert "d B m" in spoken
+    assert "megabits per second" in spoken
     assert "12 12" in spoken
+    assert "Third action" in spoken
 
 
 def test_lambda_prompt_injection_guardrail_intercept():

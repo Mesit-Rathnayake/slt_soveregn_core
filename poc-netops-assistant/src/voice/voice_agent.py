@@ -24,9 +24,10 @@ class SLTMobitelVoiceAgent:
     SLTMobitel Full 2-Way Voice & Call Center IVR Agent (1212 / 1717 Telephony & Web Voice AI).
     Capabilities:
     1. Speech-to-Text (STT / Voice Input): Transcribes user microphone WAV audio (`st.chat_input(accept_audio=True)`)
-       into text using a zero-dependency stdlib PCM wave recognizer (plus optional `SpeechRecognition` fallback).
+       into text via `SpeechRecognition` FLAC recognition with a zero-dependency stdlib PCM wave fallback.
     2. Spoken Script Normalization: Converts Markdown RAG / NetOps answers into natural spoken scripts
-       (pronouncing USSD codes like `#1456#` as 'hash 1 4 5 6 hash', stripping URLs/markdown symbols).
+       (pronouncing USSD codes like `#1456#` as 'hash 1 4 5 6 hash', stripping numbered list prefixes,
+       URLs, citations, and markdown symbols).
     3. W3C SSML Generation: Produces `<speak>...</speak>` SSML for Amazon Connect / Amazon Polly Neural TTS.
     4. Text-to-Speech (TTS / Voice Output): Synthesizes real MP3 audio bytes via Amazon Polly (`Kajal` Neural),
        `gTTS`, or zero-dependency stdlib HTTPS MP3 synthesis so the assistant speaks back in every environment.
@@ -47,6 +48,7 @@ class SLTMobitelVoiceAgent:
 
     _CHROMIUM_SPEECH_ENDPOINT = "http://www.google.com/speech-api/v2/recognize"
     _CHROMIUM_SPEECH_KEY = "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw"
+    _INSTALL_ATTEMPTED = False
 
     def __init__(self, default_voice_id: str | None = None, aws_region: str | None = None):
         self.voice_id = default_voice_id or os.getenv("AWS_POLLY_VOICE_ID", "Kajal")
@@ -55,7 +57,7 @@ class SLTMobitelVoiceAgent:
 
     @classmethod
     def _extract_pcm16_mono(cls, wav_bytes: bytes) -> tuple[bytes, int]:
-        """Extracts 16-bit mono PCM audio frames and sample rate using Python's built-in `wave` module."""
+        """Extracts 16-bit little-endian mono PCM audio frames and sample rate using Python's `wave` module."""
         with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
             nchannels = wf.getnchannels()
             sampwidth = wf.getsampwidth()
@@ -106,7 +108,7 @@ class SLTMobitelVoiceAgent:
             url,
             data=pcm16_bytes,
             headers={
-                "Content-Type": f"audio/l16; rate={sample_rate}",
+                "Content-Type": f"audio/l16; endianness=little-endian; rate={sample_rate}",
                 "User-Agent": "Mozilla/5.0"
             },
             method="POST"
@@ -127,8 +129,6 @@ class SLTMobitelVoiceAgent:
                 if transcript:
                     return transcript
         return ""
-
-    _INSTALL_ATTEMPTED = False
 
     @classmethod
     def _ensure_speech_recognition(cls):
@@ -207,9 +207,16 @@ class SLTMobitelVoiceAgent:
         Transforms a visual Markdown chat response into a crisp, natural spoken script
         suitable for a phone call or voice assistant.
         """
-        parts = [answer_markdown.strip()] if answer_markdown else []
+        parts = []
+        if answer_markdown and answer_markdown.strip():
+            cleaned_ans = re.sub(r"(?m)^\s*(?:\d+\.\s+|[-*•]\s+)", "", answer_markdown.strip())
+            parts.append(cleaned_ans)
         if key_points:
-            parts.extend(key_points[:4])
+            for kp in key_points[:4]:
+                # Strip leading numbered list prefixes like "1. " or "- " before joining
+                cleaned_kp = re.sub(r"^\s*(?:\d+\.\s+|[-*•]\s+)", "", str(kp).strip())
+                if cleaned_kp:
+                    parts.append(cleaned_kp)
         combined = " ".join(parts)
 
         # 1. Replace USSD shortcodes with natural spoken equivalents before stripping symbols
@@ -231,12 +238,15 @@ class SLTMobitelVoiceAgent:
         # 4. Strip [Citation: ...] blocks so the voice agent doesn't read SOP citation IDs aloud
         combined = re.sub(r"\[Citation:[^\]]+\]", "", combined, flags=re.IGNORECASE)
 
-        # 5. Strip Markdown formatting (**bold**, `code`, bullets, arrows, vertical bars)
+        # 5. Strip Markdown formatting and normalize units
         combined = re.sub(r"[*_`~]+", "", combined)
         combined = re.sub(r"\s*\|\s*", ". ", combined)
         combined = re.sub(r"\s*—\s*", ", ", combined)
         combined = re.sub(r"\s*->\s*|\s*→\s*", " then ", combined)
         combined = re.sub(r"\bRs\.\s*", "Rupees ", combined)
+        combined = re.sub(r"\bdBm\b", "d B m", combined)
+        combined = re.sub(r"\bMbps\b", "megabits per second", combined)
+        combined = re.sub(r"\bGbps\b", "gigabits per second", combined)
 
         # 6. Clean up whitespace and limit to a concise spoken length for voice callers
         combined = re.sub(r"\s+", " ", combined).strip()
@@ -322,7 +332,7 @@ class SLTMobitelVoiceAgent:
     def synthesize_speech_mp3(self, spoken_text: str) -> bytes | None:
         """
         Synthesizes real MP3 audio bytes from spoken_text.
-        1. Attempts Amazon Polly Neural TTS (`Kajal` / `Joanna`) if AWS credentials are configured.
+        1. Attempts Amazon Polly Neural TTS (`Kajal` / `Joanna`) if valid AWS credentials are configured.
         2. Falls back to `gTTS` if installed.
         3. Falls back to zero-dependency stdlib HTTPS MP3 synthesis so voice output works in all environments.
         Caches generated MP3 bytes in memory to keep repeat playback instant.
@@ -334,11 +344,18 @@ class SLTMobitelVoiceAgent:
         if cache_key in self._tts_cache:
             return self._tts_cache[cache_key]
 
-        # 1. Try Amazon Polly if AWS credentials exist
-        if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+        # 1. Try Amazon Polly only if real AWS credentials exist (ignore .env.example placeholders)
+        ak = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+        sk = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+        if ak and sk and "PASTE_YOUR" not in ak and "INSERT_" not in ak and "PASTE_YOUR" not in sk:
             try:
                 import boto3
-                polly = boto3.client("polly", region_name=self.aws_region)
+                polly = boto3.client(
+                    "polly",
+                    region_name=self.aws_region,
+                    aws_access_key_id=ak,
+                    aws_secret_access_key=sk
+                )
                 resp = polly.synthesize_speech(
                     Text=self.build_ssml(spoken_text),
                     TextType="ssml",
