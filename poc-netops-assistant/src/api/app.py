@@ -1,10 +1,10 @@
+import hashlib
 import importlib
 import json
 import os
 import sys
 from pathlib import Path
 import streamlit as st
-import streamlit.components.v1 as components
 
 SRC_DIR = Path(__file__).resolve().parents[1]
 BASE_DIR = SRC_DIR.parent
@@ -70,7 +70,7 @@ audit_log_path = BASE_DIR / "data" / "audit_trail.jsonl"
 
 
 @st.cache_resource
-def get_agent_and_governance(_version: str = "v7.2"):
+def get_agent_and_governance(_version: str = "v7.3"):
     agent_inst = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
     gov_inst = SovereignGovernanceManager(audit_log_path=audit_log_path)
     return agent_inst, gov_inst
@@ -86,11 +86,16 @@ if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
 if "pending_route" not in st.session_state:
     st.session_state.pending_route = "AUTO"
+if "pending_from_voice" not in st.session_state:
+    st.session_state.pending_from_voice = False
+if "last_audio_hash" not in st.session_state:
+    st.session_state.last_audio_hash = None
 
 
-def queue_prompt(prompt_text: str, route: str = "AUTO"):
+def queue_prompt(prompt_text: str, route: str = "AUTO", from_voice: bool = False):
     st.session_state.pending_prompt = prompt_text
     st.session_state.pending_route = route
+    st.session_state.pending_from_voice = from_voice
 
 
 # ---------------------------------------------------------------------------
@@ -102,11 +107,25 @@ with st.sidebar:
     if st.button("New Chat", use_container_width=True, type="primary"):
         st.session_state.chat_history = []
         st.session_state.pending_prompt = None
+        st.session_state.pending_from_voice = False
         st.rerun()
 
     st.divider()
     st.markdown("**Voice Agent (1212 / 1717 IVR)**")
-    enable_voice_agent = st.toggle("Enable Voice Response (Read Aloud)", value=False)
+    enable_voice_agent = st.toggle("Enable Voice Response (Auto-Play)", value=False)
+    voice_recording = st.audio_input("🎙️ Speak to Voice Agent", key="sidebar_voice_input")
+    if voice_recording is not None:
+        audio_bytes = voice_recording.getvalue()
+        audio_hash = hashlib.sha256(audio_bytes).hexdigest()
+        if audio_hash != st.session_state.last_audio_hash:
+            st.session_state.last_audio_hash = audio_hash
+            with st.spinner("Transcribing voice input..."):
+                stt_res = agent.voice_agent.transcribe_audio_bytes(audio_bytes)
+            if stt_res.get("success") and stt_res.get("transcript"):
+                queue_prompt(stt_res["transcript"], route="AUTO", from_voice=True)
+                st.rerun()
+            else:
+                st.warning(stt_res.get("error", "Could not recognize speech. Please try again."))
 
     st.divider()
     st.markdown("**Sample Incident Tickets**")
@@ -195,38 +214,12 @@ def render_assistant_message(turn: dict, turn_index: int, is_latest: bool = Fals
             st.markdown(f"- {kp}")
 
     spoken_text = turn.get("spoken_response", "")
-    if spoken_text and (enable_voice_agent or is_latest):
-        safe_js_text = json.dumps(spoken_text)
-        auto_play_js = "true" if (enable_voice_agent and is_latest) else "false"
-        components.html(
-            f"""
-            <div style="display:flex;align-items:center;gap:8px;margin-top:4px;font-family:sans-serif;">
-                <button id="spk_btn_{turn_index}" onclick="speakText_{turn_index}()"
-                    style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#0f172a;">
-                    🔊 Listen (Voice Agent)
-                </button>
-                <button onclick="window.speechSynthesis.cancel()"
-                    style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;color:#64748b;">
-                    ⏹ Stop
-                </button>
-            </div>
-            <script>
-            function speakText_{turn_index}() {{
-                if ('speechSynthesis' in window) {{
-                    window.speechSynthesis.cancel();
-                    const utter = new SpeechSynthesisUtterance({safe_js_text});
-                    utter.rate = 0.98;
-                    utter.lang = 'en-US';
-                    window.speechSynthesis.speak(utter);
-                }}
-            }}
-            if ({auto_play_js}) {{
-                speakText_{turn_index}();
-            }}
-            </script>
-            """,
-            height=38
-        )
+    from_voice_input = turn.get("from_voice_input", False)
+    if spoken_text and (enable_voice_agent or from_voice_input or is_latest):
+        mp3_bytes = agent.voice_agent.synthesize_speech_mp3(spoken_text)
+        if mp3_bytes:
+            should_autoplay = bool(is_latest and (enable_voice_agent or from_voice_input))
+            st.audio(mp3_bytes, format="audio/mp3", autoplay=should_autoplay)
 
     if show_dev_details:
         with st.expander("Diagnostics & Retrieved Sources"):
@@ -301,12 +294,15 @@ chat_input_text = st.chat_input("Ask a question or paste a network incident log.
 
 active_user_message = None
 route_for_turn = selected_route
+is_voice_turn = False
 
 if st.session_state.pending_prompt:
     active_user_message = st.session_state.pending_prompt
+    is_voice_turn = bool(st.session_state.get("pending_from_voice", False))
     if selected_route == "AUTO":
         route_for_turn = st.session_state.pending_route
     st.session_state.pending_prompt = None
+    st.session_state.pending_from_voice = False
 elif chat_input_text and chat_input_text.strip():
     active_user_message = chat_input_text.strip()
 
@@ -324,10 +320,11 @@ if active_user_message:
                 conversation_history=st.session_state.chat_history,
                 bedrock_model=bedrock_model_input
             )
+            turn_res["from_voice_input"] = is_voice_turn
             governance.log_event(
                 user_role=active_role,
-                action_type=f"CHAT_{turn_res['intent_route']}",
-                ticket_id="CHAT-AGENT",
+                action_type=f"{'VOICE' if is_voice_turn else 'CHAT'}_{turn_res['intent_route']}",
+                ticket_id="VOICE-AGENT" if is_voice_turn else "CHAT-AGENT",
                 redactions_count=turn_res["redactions_applied"],
                 severity=turn_res["severity"],
                 citations=turn_res["citations"],

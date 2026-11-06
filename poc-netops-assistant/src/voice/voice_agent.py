@@ -1,3 +1,5 @@
+import hashlib
+import io
 import os
 import re
 import sys
@@ -14,14 +16,15 @@ if str(SRC_DIR) not in sys.path:
 
 class SLTMobitelVoiceAgent:
     """
-    SLTMobitel Voice & Call Center IVR Agent (1212 / 1717 Telephony & Web Voice Adapter).
+    SLTMobitel Full 2-Way Voice & Call Center IVR Agent (1212 / 1717 Telephony & Web Voice AI).
     Capabilities:
-    1. Converts Markdown RAG / NetOps answers into natural spoken scripts for voice callers
+    1. Speech-to-Text (STT / Voice Input): Transcribes user microphone WAV audio (`st.audio_input`)
+       into text via `SpeechRecognition` (or Amazon Transcribe).
+    2. Spoken Script Normalization: Converts Markdown RAG / NetOps answers into natural spoken scripts
        (pronouncing USSD codes like `#1456#` as 'hash 1 4 5 6 hash', stripping URLs/markdown symbols).
-    2. Generates W3C SSML (`<speak>...</speak>`) for Amazon Connect / Amazon Polly Neural TTS.
-    3. Synthesizes MP3 audio via Amazon Polly (`boto3.client('polly')`, Neural voice `Kajal` / `Joanna`)
-       when AWS credentials are provided.
-    4. Handles Amazon Connect Contact Flow Lambda events (`POST /voice`).
+    3. W3C SSML Generation: Produces `<speak>...</speak>` SSML for Amazon Connect / Amazon Polly Neural TTS.
+    4. Text-to-Speech (TTS / Voice Output): Synthesizes real MP3 audio bytes via Amazon Polly (`Kajal` Neural)
+       with automatic fallback to `gTTS` so the assistant speaks back out loud in every browser.
     """
 
     USSD_PRONUNCIATIONS = {
@@ -40,6 +43,39 @@ class SLTMobitelVoiceAgent:
     def __init__(self, default_voice_id: str | None = None, aws_region: str | None = None):
         self.voice_id = default_voice_id or os.getenv("AWS_POLLY_VOICE_ID", "Kajal")
         self.aws_region = aws_region or os.getenv("AWS_REGION", "us-east-1")
+        self._tts_cache: dict[str, bytes] = {}
+
+    @staticmethod
+    def transcribe_audio_bytes(wav_bytes: bytes, language: str = "en-LK") -> dict:
+        """
+        Transcribes WAV audio recorded from the user's microphone (`st.audio_input`) into text.
+        Uses SpeechRecognition (Google Web Speech API) with fallback to en-US.
+        """
+        if not wav_bytes:
+            return {"success": False, "transcript": "", "error": "Empty audio buffer."}
+
+        try:
+            import speech_recognition as sr
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
+                audio_data = recognizer.record(source)
+
+            try:
+                transcript = recognizer.recognize_google(audio_data, language=language)
+            except Exception:
+                transcript = recognizer.recognize_google(audio_data, language="en-US")
+
+            return {
+                "success": True,
+                "transcript": transcript.strip(),
+                "error": None
+            }
+        except Exception as exc:
+            return {
+                "success": False,
+                "transcript": "",
+                "error": f"Could not recognize speech clearly ({exc}). Please try speaking closer to the microphone."
+            }
 
     @classmethod
     def format_for_speech(cls, answer_markdown: str, key_points: list[str] | None = None, max_sentences: int = 5) -> str:
@@ -95,82 +131,67 @@ class SLTMobitelVoiceAgent:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        # Add brief 250ms pauses after sentences for natural telephony pacing
         with_pauses = re.sub(r"([.!?])\s+", r'\1 <break time="250ms"/> ', escaped)
         return f'<speak><prosody rate="98%">{with_pauses}</prosody></speak>'
 
-    def synthesize_polly_audio(
+    def synthesize_speech_mp3(
         self,
         spoken_text: str,
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None
     ) -> bytes | None:
         """
-        Synthesizes MP3 speech audio via Amazon Polly (`boto3`) when AWS credentials are configured.
-        Returns None if AWS credentials are not set (allowing the UI to use Browser Web Speech API).
+        Synthesizes MP3 speech audio bytes for playback in the UI (`st.audio`):
+        1. Uses Amazon Polly Neural TTS (`Kajal`) when AWS IAM credentials are configured.
+        2. Automatically falls back to `gTTS` (Google Text-to-Speech) so MP3 audio playback
+           works out-of-the-box on Streamlit Community Cloud without paid API keys.
         """
-        ak = (aws_access_key_id or os.getenv("AWS_ACCESS_KEY_ID", "")).strip()
-        sk = (aws_secret_access_key or os.getenv("AWS_SECRET_ACCESS_KEY", "")).strip()
-        if not ak or not sk or "PASTE_YOUR" in ak or "INSERT_" in ak:
+        if not spoken_text or not spoken_text.strip():
             return None
 
+        cache_key = hashlib.sha256(spoken_text.strip().encode("utf-8")).hexdigest()[:24]
+        if cache_key in self._tts_cache:
+            return self._tts_cache[cache_key]
+
+        ak = (aws_access_key_id or os.getenv("AWS_ACCESS_KEY_ID", "")).strip()
+        sk = (aws_secret_access_key or os.getenv("AWS_SECRET_ACCESS_KEY", "")).strip()
+
+        # 1. Try Amazon Polly first if AWS credentials are provided
+        if ak and sk and "PASTE_YOUR" not in ak and "INSERT_" not in ak:
+            try:
+                import boto3
+                polly = boto3.client(
+                    "polly",
+                    region_name=self.aws_region,
+                    aws_access_key_id=ak,
+                    aws_secret_access_key=sk
+                )
+                ssml = self.build_ssml(spoken_text)
+                resp = polly.synthesize_speech(
+                    Text=ssml,
+                    TextType="ssml",
+                    OutputFormat="mp3",
+                    VoiceId=self.voice_id,
+                    Engine="neural"
+                )
+                stream = resp.get("AudioStream")
+                if stream:
+                    mp3_bytes = stream.read()
+                    self._tts_cache[cache_key] = mp3_bytes
+                    return mp3_bytes
+            except Exception:
+                pass
+
+        # 2. Fallback to gTTS (Google Text-to-Speech MP3 generator)
         try:
-            import boto3
-            polly = boto3.client(
-                "polly",
-                region_name=self.aws_region,
-                aws_access_key_id=ak,
-                aws_secret_access_key=sk
-            )
-            ssml = self.build_ssml(spoken_text)
-            resp = polly.synthesize_speech(
-                Text=ssml,
-                TextType="ssml",
-                OutputFormat="mp3",
-                VoiceId=self.voice_id,
-                Engine="neural"
-            )
-            stream = resp.get("AudioStream")
-            if stream:
-                return stream.read()
+            from gtts import gTTS
+            buf = io.BytesIO()
+            tts = gTTS(text=spoken_text.strip(), lang="en", tld="co.in", slow=False)
+            tts.write_to_fp(buf)
+            mp3_bytes = buf.getvalue()
+            if mp3_bytes:
+                self._tts_cache[cache_key] = mp3_bytes
+                return mp3_bytes
         except Exception:
             return None
         return None
-
-    def process_voice_turn(self, agent, transcript: str, route_mode: str = "AUTO") -> dict:
-        """
-        Runs a voice transcript through the SLTMobitelUnifiedAgent and returns both
-        the visual response and the telephony/voice payload (spoken script, SSML, and IVR routing).
-        """
-        t0 = time.perf_counter()
-        turn_res = agent.run_agent(
-            user_input=transcript,
-            route_mode=route_mode
-        )
-        spoken_script = self.format_for_speech(
-            turn_res.get("answer_markdown", ""),
-            turn_res.get("key_points", [])
-        )
-        ssml_script = self.build_ssml(spoken_script)
-
-        # Determine Amazon Connect IVR queue transfer target if escalation or out-of-scope
-        if turn_res.get("escalation_required"):
-            ivr_queue = "SLT_NOC_TIER3_EMERGENCY_QUEUE"
-        elif not turn_res.get("has_enough_knowledge", True):
-            ivr_queue = "SLT_1212_HUMAN_AGENT_QUEUE"
-        else:
-            ivr_queue = "SELF_SERVICE_COMPLETED"
-
-        return {
-            "transcript": transcript,
-            "spoken_response": spoken_script,
-            "ssml_response": ssml_script,
-            "ivr_queue_action": ivr_queue,
-            "intent_route": turn_res["intent_route"],
-            "mcp_tool_called": turn_res.get("mcp_tool_called"),
-            "has_enough_knowledge": turn_res["has_enough_knowledge"],
-            "escalation_required": turn_res["escalation_required"],
-            "redactions_applied": turn_res["redactions_applied"],
-            "agent_response": turn_res,
-            "voice_latency_ms": round((time.perf_counter() - t0) * 1000, 1)
-        }

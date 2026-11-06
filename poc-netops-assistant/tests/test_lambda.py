@@ -171,3 +171,14 @@ def test_lambda_voice_ivr_and_connect_event():
     assert body["voice_mode"] is True
     assert "<speak>" in body["ssml_response"]
     assert body["ivr_queue_action"] == "SELF_SERVICE_COMPLETED"
+
+
+def test_voice_agent_stt_and_tts_helpers():
+    from voice.voice_agent import SLTMobitelVoiceAgent
+    va = SLTMobitelVoiceAgent()
+    empty_res = va.transcribe_audio_bytes(b"")
+    assert empty_res["success"] is False
+    spoken = va.format_for_speech("Dial `#888#` or check Rs. 1,500 on 1212.")
+    assert "hash 8 8 8 hash" in spoken
+    assert "Rupees" in spoken
+    assert "12 12" in spoken

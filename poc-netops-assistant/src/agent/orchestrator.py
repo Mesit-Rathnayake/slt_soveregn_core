@@ -308,11 +308,14 @@ class SLTMobitelUnifiedAgent:
             eval_scores = self.guardrails.evaluate_rag_response(
                 clean_text, blocked_msg, [], [], in_guard, out_guard
             )
+            spoken_blocked = self.voice_agent.format_for_speech(blocked_msg, [])
             return {
                 "intent_route": "GUARDRAIL_BLOCKED",
                 "inference_mode": "SOVEREIGN_GUARDRAIL",
                 "headline": "Request Blocked by Sovereign Input Guardrail",
                 "answer_markdown": blocked_msg,
+                "spoken_response": spoken_blocked,
+                "ssml_response": self.voice_agent.build_ssml(spoken_blocked),
                 "key_points": in_guard["flags"],
                 "severity": "BLOCKED",
                 "confidence": "HIGH",
