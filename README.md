@@ -56,8 +56,24 @@ You can paste raw NOC trouble tickets (or load sample tickets from the sidebar) 
     * `guardrails_evals.py` — Input/output perimeter guardrails (prompt injection blocking, read-only CLI safety) and 4-pillar RAG evaluation engine.
     * `llm_gateway.py` — Cloud LLM gateway supporting **AWS Bedrock (`boto3`)** and **Google Gemini**, with automatic `.env` and `st.secrets` loading.
     * `governance.py` — Role-Based Access Control (RBAC) and immutable JSONL audit trail (`audit_trail.jsonl`).
-  * `src/api/app.py` — Streamlit **Conversational Chat UI** with starter question buttons and dynamic follow-up suggestions.
-  * `tests/test_mvp.py` — Automated `pytest` test suite.
+  * `src/api/`
+    * `app.py` — Streamlit **Conversational Chat UI** with starter question buttons and dynamic follow-up suggestions.
+    * `lambda_function.py` — **AWS Lambda Serverless Handler** (`lambda_handler`) exposing REST `/chat`, MCP JSON-RPC `/mcp`, and `/health` endpoints with CORS and function URL support.
+  * `tests/`
+    * `test_mvp.py` — Core RAG, CloudFront, KnowledgeBase, guardrail, and MCP protocol tests.
+    * `test_lambda.py` — Serverless Lambda handler, CORS, REST payload, and error handling tests.
+
+---
+
+## Serverless API Endpoints (AWS Lambda / API Gateway)
+
+When deployed via `aws-cloudformation-stack.yaml.example` or invoked directly, the Lambda function handles:
+
+| Endpoint | Method | Purpose | Sample Request |
+| :--- | :--- | :--- | :--- |
+| `/chat` | `POST` | AI Assistant queries (Customer KB & NetOps SOP triage) | `{"user_input": "What are the 4G LTE packages?"}` |
+| `/mcp` | `POST` | Standard Model Context Protocol (MCP) JSON-RPC 2.0 calls | `{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}` |
+| `/health` | `GET` | Health check & available MCP tool diagnostics | `GET /health` |
 
 ---
 

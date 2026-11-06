@@ -126,6 +126,19 @@ Resources:
     Properties:
       Name: !Sub "sltmobitel-kb-http-api-${EnvironmentName}"
       ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - x-auth-secret
+          - X-Amz-Date
+          - X-Api-Key
 
   SLTKnowledgeApiIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -141,6 +154,62 @@ Resources:
       ApiId: !Ref SLTKnowledgeHttpApi
       RouteKey: "POST /retrieve"
       Target: !Sub "integrations/${SLTKnowledgeApiIntegration}"
+
+  # 5B. AWS Lambda Serverless Unified Agent Function (Chat, SOP Triage & MCP Server)
+  SLTUnifiedAgentLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "slt-mobitel-unified-agent-${EnvironmentName}"
+      Runtime: python3.11
+      Handler: api.lambda_function.lambda_handler
+      Role: !GetAtt SLTAgentLambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 1024
+      Environment:
+        Variables:
+          AI_INFERENCE_MODE: AWS_BEDROCK
+          AWS_BEDROCK_MODEL_ID: !Ref BedrockModelId
+          SLT_AUDIT_LOG_PATH: /tmp/audit_trail.jsonl
+      Code:
+        S3Bucket: !Ref SLTKnowledgeAndAuditBucket
+        S3Key: deployments/slt-unified-agent.zip
+
+  SLTUnifiedAgentApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt SLTUnifiedAgentLambdaFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  SLTAgentChatRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      RouteKey: "POST /chat"
+      Target: !Sub "integrations/${SLTUnifiedAgentApiIntegration}"
+
+  SLTAgentMCPRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      RouteKey: "POST /mcp"
+      Target: !Sub "integrations/${SLTUnifiedAgentApiIntegration}"
+
+  SLTAgentHealthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      RouteKey: "GET /health"
+      Target: !Sub "integrations/${SLTUnifiedAgentApiIntegration}"
+
+  SLTAgentLambdaApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SLTUnifiedAgentLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SLTKnowledgeHttpApi}/*/*"
 
   SLTKnowledgeApiStage:
     Type: AWS::ApiGatewayV2::Stage
@@ -207,6 +276,15 @@ Outputs:
   HttpApiRetrieveEndpoint:
     Description: Direct API Gateway HTTP Endpoint for SLTMobitel KB Retrieve
     Value: !Sub "https://${SLTKnowledgeHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/retrieve"
+  HttpApiChatEndpoint:
+    Description: Serverless Unified AI Agent Chat Endpoint
+    Value: !Sub "https://${SLTKnowledgeHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/chat"
+  HttpApiMCPEndpoint:
+    Description: Model Context Protocol (MCP) JSON-RPC 2.0 Serverless Endpoint
+    Value: !Sub "https://${SLTKnowledgeHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/mcp"
+  HttpApiHealthEndpoint:
+    Description: Serverless AI Agent Health & Diagnostics Check
+    Value: !Sub "https://${SLTKnowledgeHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/health"
   CloudFrontEdgeDomain:
     Description: CloudFront Edge Distribution Domain Name
     Value: !GetAtt SLTCloudFrontDistribution.DomainName
