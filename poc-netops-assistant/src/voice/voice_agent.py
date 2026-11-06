@@ -1,14 +1,11 @@
-from array import array
 import hashlib
 import io
-import json
 import os
 import re
 import subprocess
 import sys
 import urllib.parse
 import urllib.request
-import wave
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -24,7 +21,7 @@ class SLTMobitelVoiceAgent:
     SLTMobitel Full 2-Way Voice & Call Center IVR Agent (1212 / 1717 Telephony & Web Voice AI).
     Capabilities:
     1. Speech-to-Text (STT / Voice Input): Transcribes user microphone WAV audio (`st.chat_input(accept_audio=True)`)
-       into text via `SpeechRecognition` FLAC recognition with a zero-dependency stdlib PCM wave fallback.
+       into text via `SpeechRecognition`.
     2. Spoken Script Normalization: Converts Markdown RAG / NetOps answers into natural spoken scripts
        (pronouncing USSD codes like `#1456#` as 'hash 1 4 5 6 hash', stripping numbered list prefixes,
        URLs, citations, and markdown symbols).
@@ -46,89 +43,12 @@ class SLTMobitelVoiceAgent:
         "1456": "14 56"
     }
 
-    _CHROMIUM_SPEECH_ENDPOINT = "http://www.google.com/speech-api/v2/recognize"
-    _CHROMIUM_SPEECH_KEY = "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw"
     _INSTALL_ATTEMPTED = False
 
     def __init__(self, default_voice_id: str | None = None, aws_region: str | None = None):
         self.voice_id = default_voice_id or os.getenv("AWS_POLLY_VOICE_ID", "Kajal")
         self.aws_region = aws_region or os.getenv("AWS_REGION", "us-east-1")
         self._tts_cache: dict[str, bytes] = {}
-
-    @classmethod
-    def _extract_pcm16_mono(cls, wav_bytes: bytes) -> tuple[bytes, int]:
-        """Extracts 16-bit little-endian mono PCM audio frames and sample rate using Python's `wave` module."""
-        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
-            nchannels = wf.getnchannels()
-            sampwidth = wf.getsampwidth()
-            framerate = wf.getframerate()
-            raw_frames = wf.readframes(wf.getnframes())
-
-        if sampwidth == 1:
-            samples16 = array("h", ((b - 128) << 8 for b in raw_frames))
-        elif sampwidth == 2:
-            samples16 = array("h")
-            samples16.frombytes(raw_frames)
-            if sys.byteorder == "big":
-                samples16.byteswap()
-        elif sampwidth == 4:
-            samples32 = array("i")
-            samples32.frombytes(raw_frames)
-            if sys.byteorder == "big":
-                samples32.byteswap()
-            samples16 = array("h", (s >> 16 for s in samples32))
-        else:
-            return raw_frames, framerate
-
-        if nchannels > 1:
-            mono = array(
-                "h",
-                (
-                    sum(samples16[i + ch] for ch in range(nchannels)) // nchannels
-                    for i in range(0, len(samples16) - nchannels + 1, nchannels)
-                )
-            )
-            samples16 = mono
-
-        if sys.byteorder == "big":
-            samples16.byteswap()
-        return samples16.tobytes(), framerate
-
-    @classmethod
-    def _recognize_pcm16_stdlib(cls, pcm16_bytes: bytes, sample_rate: int, language: str) -> str:
-        """Calls the Chromium Speech Recognition endpoint directly using Python's standard library."""
-        params = urllib.parse.urlencode({
-            "client": "chromium",
-            "lang": language,
-            "key": cls._CHROMIUM_SPEECH_KEY,
-            "pFilter": 0
-        })
-        url = f"{cls._CHROMIUM_SPEECH_ENDPOINT}?{params}"
-        req = urllib.request.Request(
-            url,
-            data=pcm16_bytes,
-            headers={
-                "Content-Type": f"audio/l16; endianness=little-endian; rate={sample_rate}",
-                "User-Agent": "Mozilla/5.0"
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            resp_text = resp.read().decode("utf-8", errors="ignore")
-
-        for line in resp_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            results = data.get("result", [])
-            if results and results[0].get("alternative"):
-                alts = results[0]["alternative"]
-                best = max(alts, key=lambda a: a.get("confidence", 0.5))
-                transcript = best.get("transcript", "").strip()
-                if transcript:
-                    return transcript
-        return ""
 
     @classmethod
     def _ensure_speech_recognition(cls):
@@ -158,13 +78,11 @@ class SLTMobitelVoiceAgent:
     def transcribe_audio_bytes(cls, wav_bytes: bytes, language: str = "en-LK") -> dict:
         """
         Transcribes WAV audio recorded from the user's microphone (`st.chat_input(accept_audio=True)`) into text.
-        1. Primary: `SpeechRecognition` FLAC recognizer (auto-bootstraps package if container hasn't rebuilt yet).
-        2. Fallback: Zero-dependency stdlib WAV -> L16 PCM recognizer.
+        Uses `SpeechRecognition` (and auto-bootstraps the package if the container hasn't rebuilt yet).
         """
         if not wav_bytes:
             return {"success": False, "transcript": "", "error": "Empty audio buffer."}
 
-        # 1. Primary FLAC Speech Recognition via `speech_recognition`
         sr = cls._ensure_speech_recognition()
         if sr is not None:
             try:
@@ -179,21 +97,12 @@ class SLTMobitelVoiceAgent:
                             return {"success": True, "transcript": transcript.strip(), "error": None}
                     except Exception:
                         continue
-            except Exception:
-                pass
-
-        # 2. Zero-Dependency Stdlib WAV -> L16 Speech Recognition Fallback
-        try:
-            pcm16_bytes, sample_rate = cls._extract_pcm16_mono(wav_bytes)
-            for lang in (language, "en-US"):
-                try:
-                    transcript = cls._recognize_pcm16_stdlib(pcm16_bytes, sample_rate, lang)
-                    if transcript:
-                        return {"success": True, "transcript": transcript, "error": None}
-                except Exception:
-                    continue
-        except Exception:
-            pass
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "transcript": "",
+                    "error": f"Could not recognize speech clearly ({exc}). Please try again."
+                }
 
         return {
             "success": False,
@@ -213,7 +122,6 @@ class SLTMobitelVoiceAgent:
             parts.append(cleaned_ans)
         if key_points:
             for kp in key_points[:4]:
-                # Strip leading numbered list prefixes like "1. " or "- " before joining
                 cleaned_kp = re.sub(r"^\s*(?:\d+\.\s+|[-*•]\s+)", "", str(kp).strip())
                 if cleaned_kp:
                     parts.append(cleaned_kp)
