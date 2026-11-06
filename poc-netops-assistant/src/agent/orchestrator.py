@@ -311,12 +311,15 @@ class SLTMobitelUnifiedAgent:
             spoken_blocked = self.voice_agent.format_for_speech(blocked_msg, [])
             return {
                 "intent_route": "GUARDRAIL_BLOCKED",
+                "mcp_tool_called": "slt_sanitize_pii",
                 "inference_mode": "SOVEREIGN_GUARDRAIL",
+                "has_enough_knowledge": False,
                 "headline": "Request Blocked by Sovereign Input Guardrail",
                 "answer_markdown": blocked_msg,
                 "spoken_response": spoken_blocked,
                 "ssml_response": self.voice_agent.build_ssml(spoken_blocked),
                 "key_points": in_guard["flags"],
+                "draft_handover_summary": "",
                 "severity": "BLOCKED",
                 "confidence": "HIGH",
                 "escalation_required": False,
@@ -330,7 +333,8 @@ class SLTMobitelUnifiedAgent:
                 "eval_metrics": eval_scores,
                 "trace_steps": trace_steps,
                 "latency_ms": round(latency_ms, 1),
-                "warnings": in_guard["flags"]
+                "warnings": in_guard["flags"],
+                "suggested_followups": []
             }
 
         # Step 3: Intent Classification & Tool Routing (Always classify on the user's current query, not old context)

@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.parse
 import urllib.request
@@ -127,17 +128,61 @@ class SLTMobitelVoiceAgent:
                     return transcript
         return ""
 
+    _INSTALL_ATTEMPTED = False
+
+    @classmethod
+    def _ensure_speech_recognition(cls):
+        try:
+            import speech_recognition as sr
+            return sr
+        except ImportError:
+            if not cls._INSTALL_ATTEMPTED:
+                cls._INSTALL_ATTEMPTED = True
+                try:
+                    subprocess.run(
+                        [
+                            sys.executable, "-m", "pip", "install", "--quiet",
+                            "SpeechRecognition>=3.12.0", "gTTS>=2.5.0",
+                            "audioop-lts", "standard-aifc"
+                        ],
+                        check=False,
+                        timeout=30
+                    )
+                    import speech_recognition as sr
+                    return sr
+                except Exception:
+                    return None
+            return None
+
     @classmethod
     def transcribe_audio_bytes(cls, wav_bytes: bytes, language: str = "en-LK") -> dict:
         """
         Transcribes WAV audio recorded from the user's microphone (`st.chat_input(accept_audio=True)`) into text.
-        Works out-of-the-box using Python's built-in `wave` + `urllib.request` with zero external packages required,
-        and also supports `speech_recognition` if installed.
+        1. Primary: `SpeechRecognition` FLAC recognizer (auto-bootstraps package if container hasn't rebuilt yet).
+        2. Fallback: Zero-dependency stdlib WAV -> L16 PCM recognizer.
         """
         if not wav_bytes:
             return {"success": False, "transcript": "", "error": "Empty audio buffer."}
 
-        # 1. Primary Zero-Dependency Stdlib WAV -> L16 Speech Recognition (works on all Streamlit Cloud runtimes)
+        # 1. Primary FLAC Speech Recognition via `speech_recognition`
+        sr = cls._ensure_speech_recognition()
+        if sr is not None:
+            try:
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
+                    audio_data = recognizer.record(source)
+
+                for lang in (language, "en-US"):
+                    try:
+                        transcript = recognizer.recognize_google(audio_data, language=lang)
+                        if transcript and transcript.strip():
+                            return {"success": True, "transcript": transcript.strip(), "error": None}
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        # 2. Zero-Dependency Stdlib WAV -> L16 Speech Recognition Fallback
         try:
             pcm16_bytes, sample_rate = cls._extract_pcm16_mono(wav_bytes)
             for lang in (language, "en-US"):
@@ -145,23 +190,6 @@ class SLTMobitelVoiceAgent:
                     transcript = cls._recognize_pcm16_stdlib(pcm16_bytes, sample_rate, lang)
                     if transcript:
                         return {"success": True, "transcript": transcript, "error": None}
-                except Exception:
-                    continue
-        except Exception:
-            pass
-
-        # 2. Optional fallback via `speech_recognition` package if installed
-        try:
-            import speech_recognition as sr
-            recognizer = sr.Recognizer()
-            with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
-                audio_data = recognizer.record(source)
-
-            for lang in (language, "en-US"):
-                try:
-                    transcript = recognizer.recognize_google(audio_data, language=lang)
-                    if transcript and transcript.strip():
-                        return {"success": True, "transcript": transcript.strip(), "error": None}
                 except Exception:
                     continue
         except Exception:

@@ -1,5 +1,5 @@
 # SLTMobitel Hybrid Cloud AI Platform - Global Configuration Template (SLT Digital Labs)
-# Replaces costly IBM Sovereign Core license with AWS CloudFormation + CloudFront + API Gateway + Bedrock/Ollama
+# Replaces costly IBM Sovereign Core license with AWS CloudFormation + CloudFront + API Gateway + Amazon Bedrock
 platform:
   organization: "SLT-Digital-Labs"
   environment: "prod"
@@ -11,6 +11,7 @@ aws_services:
   edge_delivery_and_waf: "Amazon CloudFront + Origin Custom Header"
   kb_api_gateway_endpoint: "https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/retrieve"
   cloud_llm_provider: "Amazon Bedrock (anthropic.claude-3-haiku-20240307-v1:0)"
+  voice_ivr_provider: "Amazon Polly Neural TTS + Amazon Connect (1212 / 1717 IVR)"
 
 governance:
   data_residency_policy: "PII/IP Sanitization Pre-Flight before AWS API Gateway / Bedrock"

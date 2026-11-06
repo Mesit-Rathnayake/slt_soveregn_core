@@ -677,6 +677,7 @@ class SovereignNetOpsRAG:
             "ticket_id": meta["ticket_id"],
             "affected_node": meta["affected_node"],
             "inference_mode": "LOCAL_GROUNDED_RULE_ENGINE",
+            "has_enough_knowledge": "insufficient telemetry" not in rule_res["severity"].lower(),
             "severity": rule_res["severity"],
             "escalation_required": rule_res["escalation_required"],
             "escalation_target": rule_res["escalation_target"],
@@ -788,9 +789,9 @@ if __name__ == "__main__":
     clean_ticket_path = base_dir / "data" / "synthetic_incidents" / "inc_2026_1042_sanitized.txt"
 
     print("Initializing SLT Hybrid AWS + Sovereign NetOps RAG Engine...")
-    rag = SovereignNetOpsRAG(manuals_dir=manuals_dir, enable_embeddings=True)
+    rag = SovereignNetOpsRAG(manuals_dir=manuals_dir, enable_embeddings=False)
     ticket_text = clean_ticket_path.read_text(encoding="utf-8")
-    report = rag.analyze_incident(ticket_text, mode_override="OLLAMA_LOCAL", ollama_model="granite3.1-dense:2b")
+    report = rag.analyze_incident(ticket_text, mode_override="AWS_BEDROCK")
 
     print("=" * 70)
     print("SLT HYBRID SOVEREIGN AI - RAG REPORT")

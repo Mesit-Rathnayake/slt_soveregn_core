@@ -31,8 +31,8 @@ def _get_agent_and_governance():
     if _AGENT_INSTANCE is None:
         manuals_dir = BASE_DIR / "data" / "approved_manuals"
         default_audit = (BASE_DIR / "data" / "audit_trail.jsonl")
-        if not default_audit.parent.exists() or os.name != "nt":
-            # In AWS Lambda environment or read-only container, write to /tmp
+        if not default_audit.parent.exists() or os.name != "nt" or "PYTEST_CURRENT_TEST" in os.environ:
+            # In AWS Lambda environment, read-only container, or pytest run, write to /tmp
             audit_log_path = Path(os.getenv("SLT_AUDIT_LOG_PATH", Path(tempfile.gettempdir()) / "audit_trail.jsonl"))
         else:
             audit_log_path = Path(os.getenv("SLT_AUDIT_LOG_PATH", default_audit))
@@ -216,11 +216,11 @@ def lambda_handler(event: dict, context=None) -> dict:
             "intent_route": turn_res["intent_route"],
             "mcp_tool_called": turn_res.get("mcp_tool_called"),
             "inference_mode": turn_res["inference_mode"],
-            "has_enough_knowledge": turn_res["has_enough_knowledge"],
-            "escalation_required": turn_res["escalation_required"],
-            "escalation_target": turn_res["escalation_target"],
-            "citations": turn_res["citations"],
-            "redactions_applied": turn_res["redactions_applied"],
+            "has_enough_knowledge": turn_res.get("has_enough_knowledge", True),
+            "escalation_required": turn_res.get("escalation_required", False),
+            "escalation_target": turn_res.get("escalation_target", "None"),
+            "citations": turn_res.get("citations", []),
+            "redactions_applied": turn_res.get("redactions_applied", 0),
             "suggested_followups": turn_res.get("suggested_followups", []),
             "latency_ms": total_latency_ms
         })
