@@ -12,6 +12,7 @@ if str(SRC_DIR) not in sys.path:
 
 from ingestion.sanitizer import SovereignDataSanitizer
 from retrieval.rag_engine import SovereignNetOpsRAG
+from voice.voice_agent import SLTMobitelVoiceAgent
 
 
 class SLTMCPToolServer:
@@ -130,6 +131,21 @@ class SLTMCPToolServer:
                         }
                     }
                 }
+            },
+            {
+                "name": "slt_format_voice_ivr",
+                "description": (
+                    "Formats an assistant markdown answer and key points into a natural spoken script "
+                    "and W3C SSML (<speak>...</speak>) for 1212/1717 Voice IVR & Amazon Polly TTS."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "answer_markdown": {"type": "string"},
+                        "key_points": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["answer_markdown"]
+                }
             }
         ]
 
@@ -235,6 +251,21 @@ class SLTMCPToolServer:
                 "content": [{"type": "text", "text": json.dumps(status_payload)}]
             }
 
+        if name == "slt_format_voice_ivr":
+            ans_md = str(args.get("answer_markdown", ""))
+            kps = args.get("key_points") or []
+            spoken = SLTMobitelVoiceAgent.format_for_speech(ans_md, kps)
+            ssml = SLTMobitelVoiceAgent.build_ssml(spoken)
+            voice_payload = {
+                "spoken_response": spoken,
+                "ssml_response": ssml
+            }
+            return {
+                "isError": False,
+                "structuredContent": voice_payload,
+                "content": [{"type": "text", "text": spoken}]
+            }
+
         return {
             "isError": True,
             "structuredContent": {"error": f"Unknown MCP tool: {name}"},
@@ -325,3 +356,4 @@ if __name__ == "__main__":
         print(json.dumps(server.list_tools(), indent=2))
     else:
         server.serve_stdio()
+

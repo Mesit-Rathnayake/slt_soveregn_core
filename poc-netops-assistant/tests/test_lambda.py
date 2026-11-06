@@ -148,3 +148,26 @@ def test_lambda_netops_incident_triage():
     assert body["escalation_required"] is True
     assert body["mcp_tool_called"] == "slt_diagnose_netops_incident"
     assert body["redactions_applied"] >= 3
+    assert body["ivr_queue_action"] == "SLT_NOC_TIER3_EMERGENCY_QUEUE"
+
+
+def test_lambda_voice_ivr_and_connect_event():
+    # Simulate an Amazon Connect Contact Flow event calling POST /voice
+    connect_event = {
+        "httpMethod": "POST",
+        "path": "/voice",
+        "body": json.dumps({
+            "Details": {
+                "Parameters": {
+                    "transcript": "Hello"
+                }
+            }
+        })
+    }
+    resp = lambda_handler(connect_event)
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["success"] is True
+    assert body["voice_mode"] is True
+    assert "<speak>" in body["ssml_response"]
+    assert body["ivr_queue_action"] == "SELF_SERVICE_COMPLETED"

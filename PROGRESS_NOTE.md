@@ -14,6 +14,8 @@
   - Implemented `/chat` REST endpoint, `/mcp` JSON-RPC 2.0 endpoint, `/health` diagnostics check, and CORS preflight (`OPTIONS`).
   - Added CloudFormation stack definitions (`SLTUnifiedAgentLambdaFunction`, API Gateway integrations and routes in `aws-cloudformation-stack.yaml.example`).
   - Authored comprehensive unit tests in `tests/test_lambda.py` (13/13 tests passing across `test_lambda.py` and `test_mvp.py`).
+- **Implemented Voice Agent & Call Center IVR Adapter (`src/voice/voice_agent.py`):**
+  - Added spoken script normalization (pronouncing USSD codes like `#1456#`, `#888#`, `#170#` and stripping markdown/citations for voice callers), W3C `<speak>` SSML generation, Amazon Polly Neural TTS integration, Amazon Connect `/voice` Lambda handling, and interactive browser speech synthesis (`🔊 Listen (Voice Agent)`) in the Streamlit UI.
 - **Built Clean Conversational Chat UI & Cloud Deployment (`app.py`, `orchestrator.py`, `guardrails_evals.py`):**
   - Built a clean **Conversational Chat UI** with clickable starter question buttons, dynamic follow-up suggestions, natural greeting/smalltalk handling, follow-up hardware fault escalation, and honest out-of-scope abstention (*"I don't have enough knowledge in the current SLTMobitel KnowledgeBase to answer that specific question"*).
   - Secured all API endpoints, custom headers, and cloud credentials so they are never exposed in the UI or GitHub repository, loading them strictly from `.env` (local) or **Streamlit Cloud Secrets (`st.secrets`)**.

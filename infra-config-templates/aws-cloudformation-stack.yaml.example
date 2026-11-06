@@ -196,6 +196,13 @@ Resources:
       RouteKey: "POST /mcp"
       Target: !Sub "integrations/${SLTUnifiedAgentApiIntegration}"
 
+  SLTAgentVoiceRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref SLTKnowledgeHttpApi
+      RouteKey: "POST /voice"
+      Target: !Sub "integrations/${SLTUnifiedAgentApiIntegration}"
+
   SLTAgentHealthRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:

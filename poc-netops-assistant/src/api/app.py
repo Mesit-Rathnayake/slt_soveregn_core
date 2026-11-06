@@ -1,8 +1,10 @@
 import importlib
+import json
 import os
 import sys
 from pathlib import Path
 import streamlit as st
+import streamlit.components.v1 as components
 
 SRC_DIR = Path(__file__).resolve().parents[1]
 BASE_DIR = SRC_DIR.parent
@@ -12,6 +14,7 @@ if str(SRC_DIR) not in sys.path:
 import retrieval.cloudfront_gateway as cf_mod
 import retrieval.aws_kb_client as aws_kb_mod
 import retrieval.rag_engine as rag_mod
+import voice.voice_agent as voice_mod
 import mcp.slt_mcp_server as mcp_mod
 import agent.guardrails_evals as guard_mod
 import agent.orchestrator as orch_mod
@@ -19,6 +22,7 @@ import agent.orchestrator as orch_mod
 importlib.reload(cf_mod)
 importlib.reload(aws_kb_mod)
 importlib.reload(rag_mod)
+importlib.reload(voice_mod)
 importlib.reload(mcp_mod)
 importlib.reload(guard_mod)
 importlib.reload(orch_mod)
@@ -66,7 +70,7 @@ audit_log_path = BASE_DIR / "data" / "audit_trail.jsonl"
 
 
 @st.cache_resource
-def get_agent_and_governance(_version: str = "v7.1"):
+def get_agent_and_governance(_version: str = "v7.2"):
     agent_inst = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
     gov_inst = SovereignGovernanceManager(audit_log_path=audit_log_path)
     return agent_inst, gov_inst
@@ -99,6 +103,10 @@ with st.sidebar:
         st.session_state.chat_history = []
         st.session_state.pending_prompt = None
         st.rerun()
+
+    st.divider()
+    st.markdown("**Voice Agent (1212 / 1717 IVR)**")
+    enable_voice_agent = st.toggle("Enable Voice Response (Read Aloud)", value=False)
 
     st.divider()
     st.markdown("**Sample Incident Tickets**")
@@ -186,6 +194,40 @@ def render_assistant_message(turn: dict, turn_index: int, is_latest: bool = Fals
         for kp in turn["key_points"]:
             st.markdown(f"- {kp}")
 
+    spoken_text = turn.get("spoken_response", "")
+    if spoken_text and (enable_voice_agent or is_latest):
+        safe_js_text = json.dumps(spoken_text)
+        auto_play_js = "true" if (enable_voice_agent and is_latest) else "false"
+        components.html(
+            f"""
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px;font-family:sans-serif;">
+                <button id="spk_btn_{turn_index}" onclick="speakText_{turn_index}()"
+                    style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#0f172a;">
+                    🔊 Listen (Voice Agent)
+                </button>
+                <button onclick="window.speechSynthesis.cancel()"
+                    style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;color:#64748b;">
+                    ⏹ Stop
+                </button>
+            </div>
+            <script>
+            function speakText_{turn_index}() {{
+                if ('speechSynthesis' in window) {{
+                    window.speechSynthesis.cancel();
+                    const utter = new SpeechSynthesisUtterance({safe_js_text});
+                    utter.rate = 0.98;
+                    utter.lang = 'en-US';
+                    window.speechSynthesis.speak(utter);
+                }}
+            }}
+            if ({auto_play_js}) {{
+                speakText_{turn_index}();
+            }}
+            </script>
+            """,
+            height=38
+        )
+
     if show_dev_details:
         with st.expander("Diagnostics & Retrieved Sources"):
             mcp_used = turn.get("mcp_tool_called", "N/A")
@@ -193,6 +235,9 @@ def render_assistant_message(turn: dict, turn_index: int, is_latest: bool = Fals
                 f"Route: `{turn['intent_route']}` | MCP Tool: `{mcp_used}` | "
                 f"Engine: `{turn['inference_mode']}` | Latency: `{turn['latency_ms']:.0f} ms`"
             )
+            if turn.get("ssml_response"):
+                st.markdown("**Voice Agent SSML (`1212` / `1717` IVR & Amazon Polly):**")
+                st.code(turn["ssml_response"], language="xml")
             if turn.get("draft_handover_summary"):
                 st.markdown("**Shift Handover Summary:**")
                 st.code(turn["draft_handover_summary"], language="markdown")

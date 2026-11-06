@@ -49,8 +49,10 @@ You can paste raw NOC trouble tickets (or load sample tickets from the sidebar) 
     * `cloudfront_gateway.py` — **Amazon CloudFront Edge Gateway** with TTL response caching and origin custom header injection.
     * `aws_kb_client.py` — HTTP API client for the **SLTMobitel KnowledgeBase Access API** (`/prod/retrieve`) with CSV/JSON chunk cleaning and English keyword reranking.
     * `rag_engine.py` — Dual RAG engine combining the SLTMobitel AWS KnowledgeBase API and local NetOps SOP manuals.
+  * `src/voice/`
+    * `voice_agent.py` — **SLTMobitel Voice & Call Center IVR Agent (`1212` / `1717`)** converting markdown answers into natural spoken scripts (pronouncing USSD codes like `#1456#` as *"hash 1 4 5 6 hash"*), generating W3C `<speak>` SSML for Amazon Polly / Amazon Connect, and routing IVR queues.
   * `src/mcp/`
-    * `slt_mcp_server.py` — **Model Context Protocol (MCP) Server (`2024-11-05` JSON-RPC 2.0)** exposing `slt_sanitize_pii`, `slt_query_cloud_kb`, `slt_diagnose_netops_incident`, and `slt_cloudfront_cache_status` as MCP tools (`tools/list`, `tools/call`) alongside SOP manual resources (`resources/list`, `resources/read`).
+    * `slt_mcp_server.py` — **Model Context Protocol (MCP) Server (`2024-11-05` JSON-RPC 2.0)** exposing `slt_sanitize_pii`, `slt_query_cloud_kb`, `slt_diagnose_netops_incident`, `slt_cloudfront_cache_status`, and `slt_format_voice_ivr` as MCP tools (`tools/list`, `tools/call`) alongside SOP manual resources (`resources/list`, `resources/read`).
   * `src/agent/`
     * `orchestrator.py` — Unified Conversational Agent (`SLTMobitelUnifiedAgent`) dispatching tools via the **MCP Server** with intent routing, smalltalk handling, and follow-up context tracking.
     * `guardrails_evals.py` — Input/output perimeter guardrails (prompt injection blocking, read-only CLI safety) and 4-pillar RAG evaluation engine.
@@ -72,6 +74,7 @@ When deployed via `aws-cloudformation-stack.yaml.example` or invoked directly, t
 | Endpoint | Method | Purpose | Sample Request |
 | :--- | :--- | :--- | :--- |
 | `/chat` | `POST` | AI Assistant queries (Customer KB & NetOps SOP triage) | `{"user_input": "What are the 4G LTE packages?"}` |
+| `/voice` | `POST` | Voice Agent / Amazon Connect `1212` IVR endpoint (returns spoken text, SSML, and IVR queue action) | `{"transcript": "How do I check my balance?"}` |
 | `/mcp` | `POST` | Standard Model Context Protocol (MCP) JSON-RPC 2.0 calls | `{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}` |
 | `/health` | `GET` | Health check & available MCP tool diagnostics | `GET /health` |
 

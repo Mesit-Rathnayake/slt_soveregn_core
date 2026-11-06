@@ -14,6 +14,7 @@ from ingestion.sanitizer import SovereignDataSanitizer
 from retrieval.rag_engine import SovereignNetOpsRAG
 from agent.guardrails_evals import SovereignGuardrailsAndEvals
 from mcp.slt_mcp_server import SLTMCPToolServer
+from voice.voice_agent import SLTMobitelVoiceAgent
 
 
 class SLTMobitelUnifiedAgent:
@@ -40,6 +41,7 @@ class SLTMobitelUnifiedAgent:
         self.sanitizer = SovereignDataSanitizer()
         self.rag = SovereignNetOpsRAG(manuals_dir=manuals_dir, enable_embeddings=enable_embeddings)
         self.guardrails = SovereignGuardrailsAndEvals()
+        self.voice_agent = SLTMobitelVoiceAgent()
         self.mcp_server = SLTMCPToolServer(
             manuals_dir=manuals_dir,
             sanitizer=self.sanitizer,
@@ -237,12 +239,16 @@ class SLTMobitelUnifiedAgent:
                 "completeness_pct": 95.0,
                 "safety_compliance_pct": 100.0
             }
+            spoken_reply = self.voice_agent.format_for_speech(reply_text, [])
             return {
                 "intent_route": "CONVERSATIONAL_GREETING",
+                "mcp_tool_called": "slt_voice_ivr_respond",
                 "inference_mode": inference_engine,
                 "has_enough_knowledge": True,
                 "headline": "SLTMobitel Assistant",
                 "answer_markdown": reply_text,
+                "spoken_response": spoken_reply,
+                "ssml_response": self.voice_agent.build_ssml(spoken_reply),
                 "key_points": [],
                 "draft_handover_summary": "",
                 "severity": "INFO",
@@ -453,6 +459,8 @@ class SLTMobitelUnifiedAgent:
         q_norm = user_input.strip().lower()
         suggested_followups = [q for q in candidate_followups if q.lower() != q_norm][:3]
 
+        spoken_reply = self.voice_agent.format_for_speech(answer_md, key_points)
+
         return {
             "intent_route": chosen_route,
             "mcp_tool_called": mcp_tool_used,
@@ -460,6 +468,8 @@ class SLTMobitelUnifiedAgent:
             "has_enough_knowledge": has_knowledge,
             "headline": headline,
             "answer_markdown": answer_md,
+            "spoken_response": spoken_reply,
+            "ssml_response": self.voice_agent.build_ssml(spoken_reply),
             "key_points": key_points,
             "draft_handover_summary": handover_md,
             "severity": severity,

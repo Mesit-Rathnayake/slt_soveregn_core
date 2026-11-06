@@ -122,9 +122,21 @@ def lambda_handler(event: dict, context=None) -> dict:
             return _build_response(204, {})
         return _build_response(200, mcp_res)
 
-    # 4. Standard Assistant Chat / Query Invocation
+    # 3B. Check if this is an Amazon Connect Contact Flow IVR Event or POST /voice request
+    connect_params = body.get("Details", {}).get("Parameters", {})
+    is_voice_route = raw_path.endswith("/voice") or bool(connect_params) or bool(body.get("voice_mode"))
+    if connect_params and not body.get("user_input"):
+        body["user_input"] = (
+            connect_params.get("transcript")
+            or connect_params.get("inputTranscript")
+            or connect_params.get("CustomerInput")
+            or ""
+        )
+
+    # 4. Standard Assistant Chat / Voice / Query Invocation
     user_input = (
         body.get("user_input")
+        or body.get("transcript")
         or body.get("prompt")
         or body.get("query")
         or body.get("ticket")
@@ -186,9 +198,20 @@ def lambda_handler(event: dict, context=None) -> dict:
 
         total_latency_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
+        if turn_res.get("escalation_required"):
+            ivr_queue = "SLT_NOC_TIER3_EMERGENCY_QUEUE"
+        elif not turn_res.get("has_enough_knowledge", True):
+            ivr_queue = "SLT_1212_HUMAN_AGENT_QUEUE"
+        else:
+            ivr_queue = "SELF_SERVICE_COMPLETED"
+
         return _build_response(200, {
             "success": True,
+            "voice_mode": is_voice_route,
             "answer": turn_res["answer_markdown"],
+            "spoken_response": turn_res.get("spoken_response", ""),
+            "ssml_response": turn_res.get("ssml_response", ""),
+            "ivr_queue_action": ivr_queue,
             "key_points": turn_res.get("key_points", []),
             "intent_route": turn_res["intent_route"],
             "mcp_tool_called": turn_res.get("mcp_tool_called"),
