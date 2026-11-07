@@ -137,8 +137,18 @@ class SovereignNetOpsRAG:
 
     @staticmethod
     def _stem_token(word: str) -> str:
-        """Lightweight stemmer so 'active'/'activations' and 'packages'/'package' match."""
+        """Lightweight stemmer & spelling normalizer so British/American and plural forms match."""
         w = word.lower().strip()
+        if w in ("fibre", "fiber", "ftth"):
+            return "fiber"
+        if w in ("peotv", "peo"):
+            return "peo"
+        if w in ("wifi", "wlan"):
+            return "wifi"
+        if w in ("addon", "addons"):
+            return "addon"
+        if w in ("prepaid", "postpaid"):
+            return "paid"
         if w.startswith("activ"):
             return "activ"
         if w.startswith("packag"):
@@ -154,40 +164,34 @@ class SovereignNetOpsRAG:
         return w
 
     @classmethod
-    def _chunks_are_relevant_to_query(cls, query_text: str, chunks: list[dict], min_score: float = 0.50) -> bool:
+    def _chunks_are_relevant_to_query(cls, query_text: str, chunks: list[dict], min_score: float = 0.35) -> bool:
         """
         Determines whether the retrieved AWS KB chunks actually contain knowledge relevant
-        to the user's question. Prevents dumping irrelevant chunks when the KB doesn't know.
+        to the user's question. Prevents dumping irrelevant chunks when the KB doesn't know,
+        while accepting valid AWS KB chunks whose cosine similarity is in the 0.35–0.65 range.
         """
         if not chunks:
             return False
 
-        top_score = max(float(c.get("score", 0.0)) for c in chunks)
-        # Extract meaningful query keywords (excluding common stopwords & generic country names)
-        raw_words = [w for w in re.findall(r"[a-zA-Z0-9]{3,}", query_text.lower()) if w not in cls.STOPWORDS]
+        top_score = max(
+            float(c.get("rerank_score", c.get("score", 0.0)))
+            for c in chunks
+        )
+        raw_words = [w for w in re.findall(r"[a-zA-Z0-9]{2,}", query_text.lower()) if w not in cls.STOPWORDS and len(w) >= 3]
         query_keywords = {cls._stem_token(w) for w in raw_words}
 
-        # If the query has no meaningful domain keywords left after removing stopwords, abstain
         if not query_keywords:
             return False
 
-        combined_content = " ".join(c.get("content", "") for c in chunks).lower()
+        combined_content = " ".join(c.get("content", "") + " " + c.get("raw_content", "") for c in chunks).lower()
         content_words = {cls._stem_token(w) for w in re.findall(r"[a-zA-Z0-9]{3,}", combined_content)}
 
         overlap = query_keywords.intersection(content_words)
 
-        # Require at least 1 meaningful non-stopword keyword from the user's query to exist in the chunks!
         if len(overlap) == 0:
             return False
 
-        # High vector similarity score (>= 0.65) with at least 1 matching domain keyword
-        if top_score >= 0.65 and len(overlap) >= 1:
-            return True
-        # Moderate score (>= min_score) with at least 1 matching domain keyword
         if top_score >= min_score and len(overlap) >= 1:
-            return True
-        # Below min_score (e.g., 0.42–0.49), require strong keyword overlap (>= 2 matching domain terms)
-        if top_score >= 0.42 and len(overlap) >= 2:
             return True
 
         return False
@@ -200,11 +204,12 @@ class SovereignNetOpsRAG:
         """
         q_lower = query_text.lower()
         combined = "\n".join(c.get("content", "") for c in chunks)
+        combined_lower = combined.lower()
 
         # 1A. Checking Active Packages / Active Data Packages / Active Call & Voice Packages (#888# / MySLT / #170#)
         if any(w in q_lower for w in (
             "active", "activated", "activation", "activations", "my package", "current package",
-            "call package", "voice package", "data package", "upahara", "samurdhi", "post-paid", "postpaid", "pre-paid", "prepaid"
+            "upahara", "samurdhi", "garusaru", "kalaguna", "liyasara"
         )):
             ans = (
                 "You can view and manage your **active SLTMobitel Data, Call/Voice, and Broadband packages** "
@@ -214,86 +219,175 @@ class SovereignNetOpsRAG:
                 "**Check Active Packages & Plans (`#888#` Self-Care Portal):** Dial **`#888#`** and select **My Package** or **My Activations** to see your currently active Pre-Paid/Post-Paid Call, Broadband Data, and VAS packages, or to activate/deactivate plans.",
                 "**Check Active Data Packages & Remaining GB (`MySLT App` / `#170#`):** Open **MySLT App → Internet → Data Remaining** (or dial **`#170#`**) to view active data bundles, Extra GB, and streaming add-ons.",
                 "**Check Current Usage & Account Summary (`#1456#`):** Dial **`#1456#`** (or call `1456` IVR) to check Current Usage, Account Balance, and Last Month Bill.",
-                "**Call & Post-Paid Packages Covered under `#888#`:** Includes **Unlimited Family Calls (`Rs. 747/month`, 24x7 unlimited voice)** and Post-Paid plans (*Upahara, New Upahara, Samurdhi, Meth, Garusaru, Kalaguna, Liyasara, FX190/390/790, DoubleM*)."
+                "**Post-Paid & Voice Plans Covered under `#888#`:** Includes **Unlimited Family / Home Calls (`Rs. 747/month`)** and Post-Paid plans (*Upahara, New Upahara, Samurdhi, Meth, Garusaru, Media, Kalaguna, Liyasara, ACTIVF, SRIL, VAL50, FX190/390/790, DoubleM*)."
             ]
             return ans, bullets
 
-        # 1B. USSD / Balance / Billing / Self-Care Portal / Add-on questions
-        if any(w in q_lower for w in ("balance", "ussd", "code", "bill", "billing", "1456", "888", "add-on", "addon", "extra gb", "170", "roaming", "youtube", "myslt")):
-            if any(k in combined for k in ("#1456#", "#888#", "#170#", "MySLT", "YouTube", "Activations")):
-                ans = (
-                    "You can check your **SLTMobitel Data & Bill Balance**, activate **Extra GB / Data Add-ons**, "
-                    "and manage your account using the **MySLT App**, **Web Portal**, or **USSD Shortcodes**:"
-                )
+        # 1B. eSIM / *#06# Compatibility & New Connection Documents
+        if any(w in q_lower for w in ("esim", "e-sim", "eid", "06#", "document", "documents", "nic", "passport", "new connection")):
+            if "esim" in combined_lower or "*#06#" in combined_lower or "esim" in q_lower or "e-sim" in q_lower:
+                ans = "Here is how to check **SLTMobitel eSIM** compatibility and activate an eSIM:"
                 bullets = [
-                    "**Activate Data Add-ons / Extra GB:** Dial **`#170#`** or use the **MySLT App** (`https://myslt.slt.lk/`) to add Extra GB or Social/Streaming bundles (e.g., **YouTube 7-Day Add-on: 15 GB for Rs. 155**, or Zoom/Teams add-ons).",
-                    "**Check Detailed Data Usage (`MySLT App / Portal`):** Open **MySLT App → Internet → Select Data Remaining → More → Enable Detailed Reports**.",
-                    "**Billing & Balance USSD (`#1456#` or dial `1456` IVR):** Check Current Usage, Account Balance, Last Month Bill, Last Payment, and Credit Limit.",
-                    "**Self-Care Portal (`#888#`):** Manage 'My Package', Pre-Paid/Post-Paid plans, 'My Activations', and PUK codes."
+                    "**Verify Device eSIM Compatibility:** Dial **`*#06#`** on your phone and confirm that an **EID number** is displayed.",
+                    "**Get Your eSIM:** Visit `https://sltmobitel.lk/esim` or any SLTMobitel branch/outlet with your **NIC / Driving License / Passport** to obtain your eSIM QR profile."
+                ]
+                return ans, bullets
+            if "required documents" in combined_lower or "application form" in combined_lower:
+                ans = "To obtain a **new SLTMobitel Prepaid or Postpaid connection** at a retail outlet, please provide:"
+                bullets = [
+                    "**1. Completed Application Form**",
+                    "**2. Identity Proof:** National Identity Card (NIC), Driving License, or Passport.",
+                    "**3. Valid Billing Proof:** Water bill, electricity bill, fixed-line telephone bill, credit card statement, or bank current account statement."
                 ]
                 return ans, bullets
 
-        # 2. 4G LTE Home Broadband & PeoTV Packages / Pricing
-        if any(w in q_lower for w in ("package", "packages", "price", "prices", "peotv", "peo", "lte", "broadband", "flash", "hbb", "channel", "plan", "plans")):
-            if any(k in combined for k in ("Unlimited LTE Flash", "PEO HD PLUS", "Package Details", "Broadband")):
-                ans = "Here are the **SLTMobitel 4G LTE Home Broadband, PEOTV, and Voice** packages:"
+        # 1C. mCash Account & Bank Top-Up Management
+        if "mcash" in q_lower or "m-cash" in q_lower or ("bank account" in q_lower and "mcash" in combined_lower):
+            ans = "Here is how to manage your **SLTMobitel mCash** account and linked bank accounts:"
+            bullets = [
+                "**Remove a Saved Bank Account in mCash:** Log in to the **mCash Main Menu** → Click **Top Up Via Bank Account** → Select the Bank Account → Tap the **Delete icon** → **Confirm**.",
+                "**mCash USSD & App Access:** Dial **`#111#`** or use the **mCash Smartphone App** for fast transactions, bill payments, and promotions."
+            ]
+            return ans, bullets
+
+        # 1D. Data Add-ons (YouTube, WhatsApp/Messenger, Gaming, LMS E-Learning, Streaming)
+        if any(w in q_lower for w in (
+            "add-on", "addon", "addons", "extra gb", "youtube", "whatsapp", "messenger",
+            "viber", "youth", "gamer", "gaming", "lms", "learning", "streamer", "entertainment combo"
+        )):
+            ans = "Here are the **SLTMobitel Data Add-ons** (Social, Streaming, Gaming & E-Learning) — activate via **`#170#`** or the **MySLT App**:"
+            bullets = [
+                "**Social & Video (7 Days):** **YouTube (7 Days):** `15 GB` for **Rs. 155** | **Messenger (7 Days):** `10 GB` (WhatsApp, Viber, Messenger) for **Rs. 45** | **Youth Add-on (7 Days):** `20 GB` for **Rs. 195**.",
+                "**Entertainment & Streaming (Monthly):** **Entertainment Combo:** `Unlimited` streaming data for **Rs. 1,990** | **Streamer Premium:** `150 GB` for **Rs. 4,000**.",
+                "**Gaming Add-ons:** **Gamer Lite:** `25 GB` for **Rs. 500** | **Gamer Premium:** `100 GB` for **Rs. 3,000**.",
+                "**E-Learning (LMS) & Voice Add-ons:** **LMS Lite:** `30 GB` for **Rs. 195** | **LMS Max:** `100 GB` for **Rs. 490** | **Voice 100 Min:** `100 minutes` (SLT-to-SLT) for **Rs. 200**."
+            ]
+            return ans, bullets
+
+        # 1E. USSD / Balance / Billing / Self-Care Portal
+        if any(w in q_lower for w in ("balance", "ussd", "code", "codes", "bill", "billing", "1456", "888", "170", "myslt", "usage")):
+            ans = (
+                "You can check your **SLTMobitel Data & Bill Balance**, activate **Extra GB / Data Add-ons**, "
+                "and manage your account using the **MySLT App**, **Web Portal**, or **USSD Shortcodes**:"
+            )
+            bullets = [
+                "**Billing & Balance USSD (`#1456#` or dial `1456` IVR):** Check Current Usage, Account Balance, Last Month Bill, Total Billed Usage, Last Payment, Billed Date, and Credit Limit.",
+                "**Self-Care Portal (`#888#`):** View and manage **My Package**, **My Activations**, Pre-Paid/Post-Paid plans, and PUK codes.",
+                "**Data Add-ons & Extra GB (`#170#` / `MySLT App`):** Open **MySLT App → Internet → Data Remaining** (or dial **`#170#`**) to check remaining data or activate add-ons.",
+                "**Other Key Shortcodes:** **`#999#`** (Roaming) | **`#111#`** (mCash) | **`*#06#`** (eSIM EID Check)."
+            ]
+            return ans, bullets
+
+        # 2A. Fibre (FTTH) Broadband Packages, Speeds & Megaline Migration
+        if any(w in q_lower for w in ("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo", "100 mbps", "300 mbps", "1 gbps", "1000 mbps")):
+            ans = "Here are the **SLTMobitel Fibre (FTTH) Broadband** packages, speeds (up to `300 Mbps` / `1 Gbps`), and migration offers:"
+            bullets = [
+                "**Fibre Anytime & Bundled Trio Packages:** **Fiber Starter:** `80 GB` (**Rs. 2,690**, `100/50 Mbps`) | **Trio Vibe:** `40 GB` (**Rs. 3,530**) | **Trio Vibe Plus:** `40 GB` (**Rs. 4,100**) | **Trio Shine:** `100 GB` (**Rs. 4,950**).",
+                "**Fibre Unlimited Home & Pro Packages:** **Unlimited Home:** **Rs. 5,900** (`100/50 Mbps`) | **Unlimited Home Plus:** **Rs. 9,900** (`200/100 Mbps`) | **Unlimited Twin:** **Rs. 14,900** | **Unlimited Pro:** **Rs. 19,900** (`500/200 Mbps`).",
+                "**High-Speed Fibre Edge, Turbo & Ultra (`1 Gbps`):** **Unlimited Edge:** **Rs. 29,900** (`750/250 Mbps`) | **Unlimited Turbo:** **Rs. 39,900** (`1000/300 Mbps`) | **Ultra Prime:** `5,000 GB` (**Rs. 75,000**, `1000/500 Mbps`) | **Ultra Flash Prime:** `200 GB/day` (**Rs. 75,000**, `1000/500 Mbps`).",
+                "**Megaline to Fibre Migration:** Standard **Rs. 7,500** (**Promotional Rs. 5,000**) when upgrading from Megaline Double Play to Fibre Double Play or Triple Play (STB included)."
+            ]
+            return ans, bullets
+
+        # 2B. PEOTV Packages (when specifically asking about PEOTV / TV / Channels)
+        if any(w in q_lower for w in ("peotv", "peo", "channel", "channels", "television", "tv", "uthayam", "titanium", "platinum", "silver", "bronze", "gold")):
+            if not any(w in q_lower for w in ("lte", "4g", "broadband")):
+                ans = "Here are the **SLTMobitel PEOTV & PEO Mobile** packages and channel lineups:"
                 bullets = [
-                    "**4G LTE Home Broadband (30 Days):** `20 GB` for **Rs. 535** | **HBB Anytime 899:** `35 GB` for **Rs. 899** | **HBB Anytime 1899:** `75 GB` for **Rs. 1,899**.",
-                    "**Unlimited LTE Flash Packages:** **Flash 5** (`5 GB` at standard LTE speed, then `1 Mbps` unlimited) | **Flash 10** (**Rs. 4,090** — `10 GB` at standard LTE speed, then `1 Mbps` unlimited).",
-                    "**PEOTV Packages:** **PEO HD PLUS** (`160 channels` — **Rs. 3,125**), **PEO TITANIUM** (`139 channels` — **Rs. 2,940**), **PEO PLATINUM** (`125 channels` — **Rs. 2,660**).",
-                    "**Voice & Mobile Packages:** **Unlimited Family Calls** (**Rs. 747/month**), or dial **`#888#`** (`My Package` / `My Activations`) to check active Mobile Post-Paid & Pre-Paid plans."
+                    "**Premium & HD Packages:** **PEO HD Plus:** `160 channels` (**Rs. 3,125**) | **PEO Titanium:** `139 channels` (**Rs. 2,940**) | **PEO Platinum:** `125 channels` (**Rs. 2,660**).",
+                    "**Family & Mid-Tier Packages:** **PEO Gold:** `108 channels` (**Rs. 2,100**) | **PEO Entertainment:** `112 channels` (**Rs. 1,875**) | **PEO Family:** `100 channels` (**Rs. 1,625**).",
+                    "**Silver, Bronze & Regional Packages:** **PEO Silver Plus:** `98 channels` (**Rs. 1,375**) | **PEO Silver:** `87 channels` (**Rs. 1,125**) | **PEO Bronze:** `72 channels` (**Rs. 860**) | **PEO Uthayam:** `63 channels` (**Rs. 860**) | **Tamil Regional:** `68 channels` (**Rs. 1,125**).",
+                    "**PEO on 4G & Mobile:** **PEO 4G Elite:** `50 channels` (**Rs. 790/month**, STB Rs. 11,990) | **PEO Mobile App:** Unlimited app data for **Rs. 249/month**."
                 ]
                 return ans, bullets
 
-        # 3. APN / SIM / Credit Limit / Value Added Services (VAS)
-        if any(w in q_lower for w in ("apn", "sim", "credit limit", "vas", "value added", "mtunes", "gprs")):
-            if "APN" in combined or "credit limit" in combined.lower():
-                ans = "Here are the **SLTMobitel Mobile Data (APN), SIM, Credit Limit, and VAS** details:"
+        # 2C. 4G LTE Home Broadband, Unlimited Flash & General Package Inquiries
+        if any(w in q_lower for w in ("package", "packages", "price", "prices", "lte", "4g", "broadband", "flash", "hbb", "plan", "plans", "unlimited", "anytime", "volte")):
+            ans = "Here are the **SLTMobitel 4G LTE Home Broadband, Unlimited Flash, Fibre, and PEOTV** packages:"
+            bullets = [
+                "**4G LTE Anytime Packages (30 Days):** `20 GB` (**Rs. 535**) | **HBB Anytime 899:** `35 GB` (**Rs. 899**) | **HBB Anytime 1899:** `75 GB` (**Rs. 1,899**) | `115 GB` (**Rs. 2,590**) | **HBB Anytime 200GB:** **Rs. 3,990** | **HBB Anytime 400GB:** **Rs. 7,990**.",
+                "**4G LTE Unlimited & Flash Packages:** **LTE Unlimited 2 / 4 / 8:** **Rs. 2,950** (`2 Mbps`), **Rs. 5,150** (`4 Mbps`), **Rs. 7,090** (`8 Mbps`) | **Unlimited LTE Flash 5:** **Rs. 2,350** (`5 GB/day` then `1 Mbps`, plus free unlimited `12 midnight–7 AM`) | **Unlimited LTE Flash 10:** **Rs. 4,090** (`10 GB/day` then `1 Mbps`).",
+                "**Fibre (FTTH) Broadband:** Starts at **Fiber Starter** (`80 GB` — **Rs. 2,690**, `100/50 Mbps`) and **Unlimited Home** (**Rs. 5,900**) up to `1 Gbps` **Unlimited Turbo / Ultra Prime**.",
+                "**PEOTV & Fixed Voice Plans:** **PEO Bronze** (`72 ch` — **Rs. 860**) to **PEO HD Plus** (`160 ch` — **Rs. 3,125**) | **Unltd Home My Phone:** **Rs. 747/month** | **Voice Unltd Home/Office SLT Phone:** **Rs. 902/month**."
+            ]
+            return ans, bullets
+
+        # 3. APN / SIM / Credit Limit / Value Added Services (VAS) / Roaming & IDD
+        if any(w in q_lower for w in ("apn", "sim", "credit limit", "vas", "value added", "mtunes", "gprs", "echannelling", "roaming", "idd", "international")):
+            if any(w in q_lower for w in ("roaming", "idd", "international", "abroad", "overseas")):
+                ans = "Here are the **SLTMobitel International Roaming & IDD** details:"
                 bullets = [
-                    "**Mobile Data APN Setting:** Set your handset GPRS/Mobile Data APN to **`mobitel`**.",
-                    "**Triple-Cut SIM Card:** SLTMobitel provides a 3-in-1 SIM (Standard, Micro, and Nano SIM) to fit any handset.",
-                    "**Credit Limit Policy:** You receive an SMS alert at **75% usage** of your credit limit. Exceeding 100% may interrupt service until an interim payment is made.",
-                    "**Value Added Services (VAS):** Includes mTunes (`777`), News Alerts, mInsurance, e-Channelling (`225`), mTicketing (`365`), and Job Alerts."
+                    "**Mobile & Fixed Roaming / IDD:** SLTMobitel offers tailored outbound/inbound Mobile Roaming, International SMS, and Fixed/Mobile IDD rates (`https://sltmobitel.lk/personal/idd-and-roaming`).",
+                    "**Activate or Check Roaming Rates:** Dial **`#999#`** or use the **MySLT App** before traveling."
                 ]
                 return ans, bullets
+            ans = "Here are the **SLTMobitel Mobile Data (APN), SIM, Credit Limit, and VAS** details:"
+            bullets = [
+                "**Mobile Data APN Setting:** Set your handset GPRS/Mobile Data APN to **`mobitel`**.",
+                "**Triple-Cut SIM & eSIM:** SLTMobitel provides a 3-in-1 SIM (Standard, Micro, and Nano SIM) as well as **eSIM** (check compatibility by dialing **`*#06#`**).",
+                "**Credit Limit Policy:** You receive an SMS alert at **75% usage** of your credit limit. Exceeding 100% may interrupt service until an interim payment is made.",
+                "**Value Added Services (VAS):** Includes mTunes (`777`), News Alerts, mInsurance, e-Channelling (`225`), mTicketing (`365`), and mCash (`#111#`)."
+            ]
+            return ans, bullets
 
-        # 4. Payment Receipt / Complaint / Support Contact Channels
-        if any(w in q_lower for w in ("complaint", "receipt", "whatsapp", "support", "contact", "branch", "office", "location")):
-            if "info@mobitel.lk" in combined or "branch-locator" in combined:
-                ans = (
-                    "You can contact **SLTMobitel Customer Support**, submit payment receipts for logged complaints, "
-                    "or locate the nearest SLT branch using the channels below:"
-                )
-                bullets = [
-                    "**Hotline:** Dial **`1717`** to log a service request or inquiry.",
-                    "**Submit Payment Receipts (with SR Number & Mobile Number):** WhatsApp/Viber **`+94 71 175 5777`**, Email **`info@mobitel.lk`**, or Fax **`+94 11 233 0396`**.",
-                    "**Island-Wide Branch Locator:** Find your nearest SLT office at `https://www.slt.lk/en/contact-us/branch-locator/our-locations/our-network`."
-                ]
-                return ans, bullets
+        # 4. Payment Receipt / Complaint / Support Contact Channels / Branch Locations
+        if any(w in q_lower for w in (
+            "complaint", "receipt", "whatsapp", "support", "contact", "branch", "branches",
+            "office", "location", "locations", "store", "hotline", "number", "kandy", "jaffna", "airport", "gampaha"
+        )):
+            ans = (
+                "Here are the **SLTMobitel Customer Support Hotlines**, **Payment Receipt Channels**, "
+                "and **Branch Locations**:"
+            )
+            bullets = [
+                "**24x7 Customer Hotlines:** Dial **`1212`** (SLT Fixed / Fibre / PEOTV) or **`1717`** (Mobitel Mobile) to log a service request or inquiry.",
+                "**Submit Payment Receipts (with SR Number & Mobile Number):** WhatsApp/Viber **`+94 71 175 5777`**, Email **`info@mobitel.lk`**, or Fax **`+94 11 233 0396`**.",
+                "**Key Flagship & Regional Branches:** **Colombo Flagship Store** (No. 108, W.A.D. Ramanayake Mw, Colombo 02 — `071 275 5777`), **BIA Airport Arrival/Departure** (`0112 265 555`), **Kandy City Centre**, **Jaffna**, **Anuradhapura**, **Gampaha**, **One Galle Face**, **BMICH**, and **Rotunda Tower** (`071 275 5777`).",
+                "**Full Branch Locator:** `https://www.slt.lk/en/contact-us/branch-locator/our-locations/our-network`."
+            ]
+            return ans, bullets
 
-        # 5. Enterprise / SME / Business Solutions (Cloud, Cyber Security, Starlink)
-        if any(w in q_lower for w in ("enterprise", "business", "sme", "wholesale", "starlink", "cloud", "cyber")):
-            if "Enterprise Solutions" in combined or "SME" in combined:
-                ans = (
-                    "**SLTMobitel Business & Enterprise Solutions** provide ICT services for SMEs, "
-                    "Micro Businesses, Enterprises, and Wholesale partners:"
-                )
-                bullets = [
-                    "**Core Offerings:** Connectivity, Cloud Services, Cyber Security, Voice & Collaboration, AI Portfolio, and Digital & Managed Services.",
-                    "**SME & Enterprise Focus:** Business-grade ICT infrastructure designed to scale local and global operations."
-                ]
-                return ans, bullets
+        # 5. Enterprise / SME / Business Solutions (Cloud, SDDC, Cyber Security, Starlink)
+        if any(w in q_lower for w in ("enterprise", "business", "sme", "wholesale", "starlink", "cloud", "sddc", "cyber")):
+            ans = (
+                "**SLTMobitel Business & Enterprise Solutions** provide ICT infrastructure for SMEs, "
+                "Micro Businesses, Enterprises, and Wholesale partners:"
+            )
+            bullets = [
+                "**Enterprise Premium Cloud & SDDC:** High-performance **Software Defined Data Center (SDDC)** cloud with rapid provisioning and **pay-as-you-go** billing.",
+                "**Core Enterprise Portfolio:** Enterprise Connectivity, Cyber Security, Voice & Collaboration, AI Portfolio, Digital & Managed Services, and Starlink Business solutions."
+            ]
+            return ans, bullets
 
-        # 6. Router / Wi-Fi / Broadband Basic Troubleshooting Steps
-        if any(w in q_lower for w in ("router", "restart", "wifi", "wi-fi", "wlan", "cable", "slow", "disconnect", "connection", "internet")):
-            # If the user is reporting a follow-up failure (e.g., "the restart button does not do anything" / "still not working"),
-            # do NOT repeat the basic 4 steps — advise power-cycling via wall socket and fault escalation!
+        # 6A. Voice / Landphone Troubleshooting (Dial Tone, Noise on Line, Low Ringing Volume, Damaged Wire)
+        if any(w in q_lower for w in ("dial tone", "ringing", "tone volume", "noise", "disturbance", "telephone", "landphone", "landline", "phone wire", "voice")):
+            ans = "Here are the **SLTMobitel Fixed Voice / Landphone Troubleshooting** steps:"
+            bullets = [
+                "**No Dial Tone or Line Noise / Disturbance:** Check whether all telephone and ONT (`Phone 1`) cables are tightly connected.",
+                "**Ringing Sound Very Low:** Adjust the **ring tone volume button** on the telephone unit to **High**.",
+                "**ONT Voice Indicator (`Phone` LED is OFF):** Indicates the voice account is unable to register — please call **`1212`**.",
+                "**Damaged Telephone Wire (Inside or Outside Premises):** Log a fault via **`1212`** or the **MySLT App** (`https://myslt.slt.lk/`)."
+            ]
+            return ans, bullets
+
+        # 6B. Wireless Extender (WPS) Setup
+        if any(w in q_lower for w in ("extender", "wps", "repeater", "booster")):
+            ans = "To connect your **Wireless Extender** to your SLTMobitel router using **WPS**:"
+            bullets = [
+                "**1. Plug In:** Plug the wireless extender into a wall power outlet.",
+                "**2. Press Router WPS:** Press the **WPS button** on your SLTMobitel router.",
+                "**3. Press Extender WPS:** Press the **WPS button** on the wireless extender to pair automatically."
+            ]
+            return ans, bullets
+
+        # 6C. Router / Wi-Fi / Broadband Basic Troubleshooting Steps
+        if any(w in q_lower for w in ("router", "restart", "wifi", "wi-fi", "wlan", "cable", "slow", "disconnect", "connection", "internet", "led", "blinking", "light")):
             unresolved_signals = (
                 "doesnot", "does not", "doesn't", "did not", "didn't", "not working",
                 "nothing happens", "still", "already tried", "broken", "stuck", "dead",
                 "do anything", "won't", "wont", "cannot", "can't"
             )
-            if any(sig in q_lower for sig in unresolved_signals):
+            if any(sig in q_lower for sig in unresolved_signals) and "wifi is not working" not in q_lower and "wi-fi is not working" not in q_lower:
                 ans = "If the router button is not responding, try the following steps:"
                 bullets = [
                     "**Power-Cycle via Wall Socket:** Turn off the main wall power switch (or unplug the power adapter) for **30 seconds**, then plug it back in.",
@@ -302,15 +396,14 @@ class SovereignNetOpsRAG:
                 ]
                 return ans, bullets
 
-            if any(k in combined.lower() for k in ("restart router", "wlan", "cables are properly connected", "wi-fi")):
-                ans = "To troubleshoot or restart your router and Wi-Fi connection:"
-                bullets = [
-                    "**1. Check Router Power:** Verify that the router is plugged in and powered on.",
-                    "**2. Inspect Cable Connections:** Check that all power, telephone/Fibre patch cords, and Ethernet cables are securely connected.",
-                    "**3. Verify Wi-Fi / WLAN Status:** Check if the router's **Wi-Fi (WLAN)** indicator light is on. If not, press the **Wi-Fi / WLAN button** on the router to turn it on.",
-                    "**4. Restart the Router:** Power off the router, wait 15–30 seconds, and switch it back on (or call **`1212` / `1717`** if the issue persists)."
-                ]
-                return ans, bullets
+            ans = "To troubleshoot or restart your **SLTMobitel Router & Wi-Fi** connection:"
+            bullets = [
+                "**1. Check Device & Router Power:** Ensure Wi-Fi is enabled on your phone/laptop and the router is powered on.",
+                "**2. Inspect Cable Connections:** Verify that all power, Fibre/telephone patch cords, and Ethernet cables are tightly connected.",
+                "**3. Verify Wi-Fi / WLAN & GPON LEDs:** Check that the **WLAN** light is ON (if OFF, press the **Wi-Fi/WLAN** button on the router) and the **GPON** light is solid Green.",
+                "**4. Restart the Router:** Power off the router, wait 15–30 seconds, and switch it back on (or check quota usage via the **MySLT App** / call **`1212`** if the issue persists)."
+            ]
+            return ans, bullets
 
         # General clean paragraph & numbered-step fallback
         raw_top = chunks[0].get("content", "")
@@ -527,12 +620,13 @@ class SovereignNetOpsRAG:
         Prevents general questions like 'How do I make my router fast' from being hallucinated as OSPF/BGP faults.
         """
         t_lower = sanitized_ticket.lower()
-        sop_signals = (
-            "bgp", "ospf", "gpon", "pon_los", "dyinggasp", "exstart",
-            "mtu", "tengige", "rx power", "dbm", "slt-net-sop", "olt", "ont",
-            "inc-", "incident ticket"
+        sop_patterns = (
+            r"\bbgp\b", r"\bospf\b", r"\bgpon\b", r"\bpon_los\b", r"\bdyinggasp\b",
+            r"\bexstart\b", r"\bmtu\b", r"\btengige\w*\b", r"\brx\s+power\b",
+            r"\bdbm\b", r"\bslt-net-sop\b", r"\bolt\b", r"\bonts?\b",
+            r"\binc-\d+", r"\bincident\s+ticket\b"
         )
-        return any(sig in t_lower for sig in sop_signals)
+        return any(re.search(pat, t_lower) for pat in sop_patterns)
     def extract_ticket_metadata(self, sanitized_ticket: str) -> dict:
         ticket_id = re.search(r"INCIDENT TICKET:\s*(\S+)", sanitized_ticket)
         node = re.search(r"AFFECTED NODE:\s*([^\r\n(]+)", sanitized_ticket)

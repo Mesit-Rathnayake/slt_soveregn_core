@@ -29,10 +29,12 @@ class SLTMobitelUnifiedAgent:
     4. Post-Generation Output Guardrails & 4-Pillar RAG Evaluation Scorecard.
     """
 
-    NETOPS_KEYWORDS = [
-        "bgp", "ospf", "gpon", "olt", "ont", "pon_los", "dyinggasp", "exstart",
-        "mtu", "tengige", "rx power", "dbm", "flap", "incident ticket", "noc",
-        "slt-net-sop", "transceiver", "crc", "vlan", "pe-cmb", "agg-kdy"
+    NETOPS_PATTERNS = [
+        r"\bbgp\b", r"\bospf\b", r"\bgpon\b", r"\bpon_los\b", r"\bdyinggasp\b",
+        r"\bexstart\b", r"\bmtu\b", r"\btengige\w*\b", r"\brx\s+power\b",
+        r"\bdbm\b", r"\bflap(?:ped|ping|s)?\b", r"\bincident\s+ticket\b",
+        r"\bslt-net-sop\b", r"\btransceiver\b", r"\bpe-cmb\b", r"\bagg-kdy\b",
+        r"\bolt\b", r"\bonts?\b(?=.*\b(?:los|dyinggasp|pon|olt|alarm|port|drop)\b)"
     ]
 
     FOLLOWUP_PRONOUNS = {"it", "this", "that", "they", "them", "its", "those", "these", "above", "same"}
@@ -52,8 +54,7 @@ class SLTMobitelUnifiedAgent:
         if route_override in ("AWS_CLOUD_KB", "NETOPS_INCIDENT", "HYBRID_BOTH"):
             return route_override
         text_lower = text.lower()
-        netops_hits = sum(1 for kw in self.NETOPS_KEYWORDS if kw in text_lower)
-        if netops_hits >= 1:
+        if any(re.search(pat, text_lower) for pat in self.NETOPS_PATTERNS):
             return "NETOPS_INCIDENT"
         return "AWS_CLOUD_KB"
 
@@ -86,9 +87,13 @@ class SLTMobitelUnifiedAgent:
         # If the message contains a specific technical or product domain keyword, let it go to the KB
         domain_terms = {
             "bgp", "ospf", "gpon", "mtu", "rx", "dbm", "flap", "incident", "ticket",
-            "balance", "peotv", "lte", "broadband", "apn", "ussd", "1456", "888",
-            "170", "credit", "roaming", "starlink", "package", "price", "bill", "sim",
-            "router", "wifi", "wlan", "fibre", "fiber", "addon", "youtube", "whatsapp"
+            "balance", "peotv", "peo", "lte", "broadband", "apn", "ussd", "1456", "888",
+            "170", "credit", "roaming", "idd", "starlink", "package", "packages", "price", "prices",
+            "bill", "billing", "sim", "esim", "router", "wifi", "wlan", "fibre", "fiber", "ftth",
+            "addon", "addons", "youtube", "whatsapp", "messenger", "mcash", "upahara", "samurdhi",
+            "flash", "trio", "unlimited", "anytime", "gamer", "lms", "streamer", "extender",
+            "wps", "branch", "contact", "hotline", "1212", "1717", "prepaid", "postpaid",
+            "volte", "megaline", "phone", "voice", "enterprise", "sme", "cloud", "cyber"
         }
         if any(w in domain_terms for w in words):
             return None

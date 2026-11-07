@@ -53,89 +53,106 @@ class SLTMobitelCloudKBClient:
                 if m:
                     text = m.group(1).rstrip('"}')
 
-        # 2. If the chunk contains broken JSON array items of packages/add-ons, convert them to readable lines!
-        # Example: { "name": "Unlimited LTE Flash 10", "price": 4090, "data": "Unlimited (10 GB then 1 Mbps)" }
-        if '"name"' in text and '"price"' in text:
+        # 2. If the chunk contains JSON or partial-JSON items of packages/add-ons, convert them to readable lines!
+        if '"name"' in text and ('"price"' in text or '"channels"' in text or '"data"' in text):
             items_found = []
-            for obj_match in re.finditer(r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*\}', text):
-                block = obj_match.group(0)
-                name_val = obj_match.group(1)
+            # Split by '}' so even a leading partial JSON object (missing opening '{') is captured
+            for block in text.split("}"):
+                name_m = re.search(r'"name"\s*:\s*"([^"]+)"', block)
+                if not name_m:
+                    continue
+                name_val = name_m.group(1)
                 price_m = re.search(r'"price"\s*:\s*(\d+)', block)
                 data_m = re.search(r'"data"\s*:\s*"([^"]+)"', block)
+                data_gb_m = re.search(r'"data_gb"\s*:\s*(\d+)', block)
                 desc_m = re.search(r'"description"\s*:\s*"([^"]+)"', block)
                 chan_m = re.search(r'"channels"\s*:\s*(\d+)', block)
                 speed_m = re.search(r'"speed"\s*:\s*"([^"]+)"', block)
+                note_m = re.search(r'"note"\s*:\s*"([^"]+)"', block)
 
                 parts = [f"**{name_val}**"]
                 if price_m:
                     parts.append(f"Rs. {price_m.group(1)}")
                 if data_m:
                     parts.append(f"Data: {data_m.group(1)}")
+                elif data_gb_m:
+                    parts.append(f"Data: {data_gb_m.group(1)} GB")
                 if desc_m:
                     parts.append(desc_m.group(1))
-                if chan_m:
+                if chan_m and (not desc_m or "channel" not in desc_m.group(1).lower()):
                     parts.append(f"{chan_m.group(1)} Channels")
                 if speed_m and speed_m.group(1).lower() != "not specified":
                     parts.append(f"Speed: {speed_m.group(1)}")
+                if note_m:
+                    parts.append(note_m.group(1))
                 items_found.append(" — ".join(parts))
 
             if items_found:
                 text = "\n".join(items_found)
 
-        # 3. Unescape literal \n and \t sequences if present
-        text = text.replace("\\n", "\n").replace("\\t", " ").replace("&amp;", "&").replace("\r", "\n")
+        # 3. Unescape literal \n, \t, and HTML entities
+        text = (
+            text.replace("\\n", "\n")
+            .replace("\\t", " ")
+            .replace("&amp;", "&")
+            .replace("&nbsp;", " ")
+            .replace("&#39;", "'")
+            .replace("&quot;", '"')
+            .replace("\r", "\n")
+        )
 
-        # 4. Strip trilingual CSV quote delimiters (",") and non-ASCII Sinhala/Tamil translation blocks
-        # Many KB chunks are CSV columns like: "English text...","~ සිංහල පෙළ...","• தமிழ் உரை..."
-        if '","' in text:
-            csv_parts = [p.strip(' "~•') for p in text.split('","') if p.strip(' "~•')]
-            # Keep parts that are predominantly English (ASCII >= 80%)
-            eng_parts = [
-                p for p in csv_parts
-                if (sum(1 for c in p if ord(c) < 128) / max(len(p), 1)) >= 0.80
-            ]
-            if eng_parts:
-                text = "\n".join(eng_parts)
-
-        # Remove any remaining Sinhala (U+0D80–U+0DFF) and Tamil (U+0B80–U+0BFF) script blocks & stray CSV quotes
-        text = re.sub(r"[\u0D80-\u0DFF\u0B80-\u0BFF]+", "", text)
+        # 4. Remove Sinhala (U+0D80–U+0DFF) and Tamil (U+0B80–U+0BFF) script blocks FIRST
+        # so English FAQ columns mixed on the same line are never discarded by ASCII ratio filters
+        text = re.sub(r"[\u0D80-\u0DFF\u0B80-\u0BFF]+", " ", text)
         text = re.sub(r'","', "\n", text)
         text = re.sub(r'[~•■□●]+', "• ", text)
-        text = re.sub(r"\s{2,}", " ", text)
-        return text.strip(' "\'\n\t,')
+        text = re.sub(r"[ \t]{2,}", " ", text)
+
+        # 5. Clean and deduplicate lines
+        clean_lines = []
+        for raw_ln in text.splitlines():
+            ln = raw_ln.strip(' "\'\t,.-')
+            if not ln or len(ln) < 3:
+                continue
+            if not any(c.isalnum() for c in ln):
+                continue
+            if not clean_lines or clean_lines[-1].lower() != ln.lower():
+                clean_lines.append(ln)
+
+        return "\n".join(clean_lines)
 
     @staticmethod
     def _rerank_chunk_score(query: str, cleaned_content: str, base_score: float) -> float:
         """
         Reranks chunks returned by the AWS KB API to fix noisy vector ordering:
         - Demotes pure Sinhala/Tamil chunks when the user's query is in English.
-        - Boosts chunks that contain exact keyword matches with the user's query.
+        - Boosts chunks that contain exact & stem keyword matches with the user's query.
         """
         import re
         if not cleaned_content:
             return 0.0
 
         score = base_score
-        # Check ASCII ratio of query vs chunk content
-        query_ascii_ratio = sum(1 for ch in query if ord(ch) < 128) / max(len(query), 1)
-        content_ascii_chars = sum(1 for ch in cleaned_content if ord(ch) < 128)
-        content_ascii_ratio = content_ascii_chars / max(len(cleaned_content), 1)
+        # Normalize common British/American spellings ("fibre" <-> "fiber", "peotv" <-> "peo")
+        def _norm(w: str) -> str:
+            if w in ("fibre", "fiber", "ftth"):
+                return "fiber"
+            if w in ("peotv", "peo"):
+                return "peo"
+            if w in ("wifi", "wlan"):
+                return "wifi"
+            return w[:5] if len(w) >= 6 else w.rstrip("s")
 
-        # If user asked in English (>90% ASCII), penalize chunks that are mostly Sinhala/Tamil (<60% ASCII)
-        if query_ascii_ratio > 0.90 and content_ascii_ratio < 0.60:
-            score -= 0.18
-
-        # Boost exact & stem keyword overlap (ignoring generic location/question stopwords)
         stopwords = {
             "what", "whats", "how", "hows", "when", "where", "who", "whos", "why", "which",
             "can", "the", "and", "for", "with", "are", "was", "were", "will", "from",
             "slt", "mobitel", "sltmobitel", "sri", "lanka", "lankan", "colombo",
             "visit", "island", "world", "way", "your", "more", "see", "view", "show", "find"
         }
-        q_words = {w[:5] if len(w) >= 6 else w.rstrip("s") for w in re.findall(r"[a-zA-Z0-9]{3,}", query.lower()) if w not in stopwords}
-        c_words = {w[:5] if len(w) >= 6 else w.rstrip("s") for w in re.findall(r"[a-zA-Z0-9]{3,}", cleaned_content.lower())}
+        q_words = {_norm(w) for w in re.findall(r"[a-zA-Z0-9]{3,}", query.lower()) if w not in stopwords}
+        c_words = {_norm(w) for w in re.findall(r"[a-zA-Z0-9]{3,}", cleaned_content.lower())}
         overlap_count = len(q_words.intersection(c_words))
-        score += min(overlap_count * 0.04, 0.16)
+        score += min(overlap_count * 0.05, 0.20)
 
         return max(0.0, min(score, 0.99))
 

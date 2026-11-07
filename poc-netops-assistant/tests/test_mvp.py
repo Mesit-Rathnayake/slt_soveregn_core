@@ -162,6 +162,42 @@ def test_guardrails_block_prompt_injection_and_score_evals():
         assert router_res["has_enough_knowledge"] is False
         assert "don't have enough knowledge" in router_res["answer_markdown"].lower()
 
+    # 4.bc. Words containing 'ont' or 'olt' substrings (contact, monthly, dont, VoLTE) must route to AWS_CLOUD_KB, NOT NETOPS_INCIDENT
+    for q_text in (
+        "How do I contact customer support?",
+        "What are the monthly Fibre packages?",
+        "I dont have internet on my router",
+        "What is VoLTE?"
+    ):
+        assert agent.classify_intent(q_text, route_override="AUTO") == "AWS_CLOUD_KB"
+
+    # 4.bd. Valid KB chunks with score 0.43-0.49 (eSIM, APN, Fibre/Fiber spelling) must be answered, not abstained
+    fibre_kb = {
+        "query": "What are the monthly Fibre packages?",
+        "chunks": [
+            {
+                "doc_id": "SLT-AWS-KB-01",
+                "doc_title": "SLTMobitel Cloud KnowledgeBase (AWS)",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.48)",
+                "content": "**Fiber Starter** — Rs. 2690 — Data: 80 GB — Speed: 100 Mbps / 50 Mbps",
+                "score": 0.48,
+                "rerank_score": 0.53,
+                "similarity_score": 0.53
+            }
+        ],
+        "count": 1
+    }
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=fibre_kb):
+        f_res = agent.run_agent(
+            "What are the monthly Fibre packages?",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE"
+        )
+        assert f_res["intent_route"] == "AWS_CLOUD_KB"
+        assert f_res["has_enough_knowledge"] is True
+        assert "Fiber Starter" in " ".join(f_res["key_points"])
+
     # 5. Conversational greetings, capability inquiries & thankyou/ok acknowledgments must be answered cleanly
     for phrase in ("Hello How Can you help me today", "Hello what are the things that I can ask from you..."):
         greet_res = agent.run_agent(phrase, route_mode="AUTO")
