@@ -363,6 +363,21 @@ def test_multi_turn_supervisor_troubleshooting_flow():
     # Turn 7 ("I restarted it") must give post-restart diagnostic & escalation steps
     assert "already restarted" in responses[6]["answer_markdown"].lower()
 
+    # Turn 8 (in the SAME session!): "Can you give me a summary about everything in the knowledge base"
+    # Must NOT match 'led' inside 'knowledge' and must NOT bleed old router troubleshooting session context!
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=troubleshoot_kb):
+        summary_res = agent.run_agent(
+            "Can you give me a summary about everything in the knowledge base",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+            conversation_history=history
+        )
+        assert summary_res["has_enough_knowledge"] is True
+        assert "troubleshoot or restart" not in summary_res["answer_markdown"].lower()
+        assert "complete summary" in summary_res["answer_markdown"].lower()
+        assert len(summary_res["key_points"]) == 5
+
+
 
 
 

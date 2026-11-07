@@ -171,17 +171,26 @@ class SLTMobitelUnifiedAgent:
 
         return None
 
+    STANDALONE_TOPIC_TERMS = {
+        "summary", "summarize", "summarise", "knowledge", "knowledgebase", "catalog", "overview",
+        "package", "packages", "price", "prices", "ussd", "balance", "bill", "billing", "esim",
+        "apn", "mcash", "roaming", "idd", "branch", "branches", "hotline", "peotv", "fibre",
+        "fiber", "ftth", "addon", "addons", "youtube", "whatsapp", "gamer", "lms", "streamer",
+        "upahara", "samurdhi", "enterprise", "starlink"
+    }
+
     @classmethod
-    def _is_true_followup_question(cls, user_input: str, prev_route: str = "") -> bool:
+    def _is_true_followup_question(cls, user_input: str, prev_route: str = "", prev_text: str = "") -> bool:
         """
-        Links previous turn context if the user's message is a short follow-up
-        that references the previous turn via pronouns ('this', 'it', 'that'),
-        continuation phrases ('and', 'what about', 'ok now', 'still'), or
-        troubleshooting status updates ('power socket is fine', 'wall socket is fine', 'restarted').
-        Prevents bleeding old NetOps incident tickets into unrelated questions!
+        Links previous turn context ONLY if the user's message is a genuine follow-up
+        and NOT a brand-new standalone topic inquiry.
+        Prevents bleeding old session topics into new questions!
         """
         words = re.findall(r"[a-zA-Z]+", user_input.lower())
         if not words or len(words) > 12:
+            return False
+        # If the user names an explicit new product/catalog topic, treat it as a fresh standalone question
+        if any(w in cls.STANDALONE_TOPIC_TERMS for w in words):
             return False
         if any(w in cls.FOLLOWUP_PRONOUNS for w in words):
             return True
@@ -189,10 +198,17 @@ class SLTMobitelUnifiedAgent:
         if lower_s.startswith(("and ", "what about", "how about", "also ", "why did")):
             return True
         if prev_route != "NETOPS_INCIDENT":
-            if lower_s.startswith(("ok now", "now ", "still ", "already ", "but ")):
-                return True
-            if any(w in cls.TROUBLESHOOT_FOLLOWUP_TERMS for w in words):
-                return True
+            prev_words = set(re.findall(r"[a-zA-Z]+", prev_text.lower()))
+            prev_was_troubleshooting = bool(prev_words.intersection({
+                "router", "internet", "wifi", "wlan", "slow", "speed", "connection",
+                "connectivity", "socket", "outlet", "restarted", "reboot", "working",
+                "light", "lights", "led", "cable", "cables", "button", "voice", "telephone"
+            }))
+            if prev_was_troubleshooting:
+                if lower_s.startswith(("ok now", "now ", "still ", "already ", "but ")):
+                    return True
+                if any(w in cls.TROUBLESHOOT_FOLLOWUP_TERMS for w in words):
+                    return True
         return False
 
     def run_agent(
@@ -304,8 +320,8 @@ class SLTMobitelUnifiedAgent:
         if conversation_history:
             last_turn = conversation_history[-1]
             last_route = last_turn.get("agent_response", {}).get("intent_route", "")
-            if self._is_true_followup_question(clean_user_input, prev_route=last_route):
-                prev_sanitized = last_turn.get("agent_response", {}).get("sanitized_text") or last_turn.get("user_input", "")
+            prev_sanitized = last_turn.get("agent_response", {}).get("sanitized_text") or last_turn.get("user_input", "")
+            if self._is_true_followup_question(clean_user_input, prev_route=last_route, prev_text=prev_sanitized):
                 if prev_sanitized:
                     prev_flat = re.sub(r"\(Context:\s*([^)]+)\)", r"- \1", prev_sanitized).strip()
                     clean_text = f"{clean_user_input} (Context: {prev_flat[:160]})"

@@ -171,6 +171,40 @@ class SovereignNetOpsRAG:
             return w[:-1]
         return w
 
+    @staticmethod
+    def _has_any_term(text: str, terms) -> bool:
+        """
+        Word-boundary aware term matcher so short tokens like 'led', 'sim', 'peo', 'idd', 'vas', 'low'
+        never match inside unrelated words like 'knowledge', 'simple', 'people', 'middle', 'follow'.
+        """
+        t_lower = text.lower()
+        word_set = set(re.findall(r"[a-z0-9]+", t_lower))
+        for term in terms:
+            term_l = term.lower().strip()
+            if not term_l:
+                continue
+            if " " not in term_l and term_l.isalnum():
+                if term_l in word_set:
+                    return True
+            else:
+                if re.search(r"(?<![a-z0-9])" + re.escape(term_l) + r"(?![a-z0-9])", t_lower):
+                    return True
+        return False
+
+    @classmethod
+    def _is_kb_summary_query(cls, query_text: str) -> bool:
+        """Detects queries asking for a summary, overview, or catalog of everything in the KnowledgeBase."""
+        current_q = re.split(r"\s*\(context:", query_text, maxsplit=1, flags=re.IGNORECASE)[0].strip().lower()
+        if cls._has_any_term(current_q, ("knowledge base", "knowledgebase", "kb")):
+            if cls._has_any_term(current_q, (
+                "summary", "summarize", "summarise", "everything", "all", "overview",
+                "topics", "contain", "contains", "inside", "about", "what is in", "whats in", "catalog"
+            )):
+                return True
+        if cls._has_any_term(current_q, ("summary", "summarize", "summarise")) and cls._has_any_term(current_q, ("everything", "all topics", "all services")):
+            return True
+        return False
+
     @classmethod
     def _chunks_are_relevant_to_query(cls, query_text: str, chunks: list[dict], min_score: float = 0.35) -> bool:
         """
@@ -180,6 +214,9 @@ class SovereignNetOpsRAG:
         """
         if not chunks:
             return False
+
+        if cls._is_kb_summary_query(query_text):
+            return True
 
         top_score = max(
             float(c.get("rerank_score", c.get("score", 0.0)))
@@ -204,11 +241,12 @@ class SovereignNetOpsRAG:
 
         return False
 
-    @staticmethod
-    def _synthesize_clean_kb_fallback(query_text: str, chunks: list[dict]) -> tuple[str, list[str]]:
+    @classmethod
+    def _synthesize_clean_kb_fallback(cls, query_text: str, chunks: list[dict]) -> tuple[str, list[str]]:
         """
         Synthesizes a clean, conversational answer and bullet points directly from
         the retrieved AWS KB chunks when an external LLM is offline or in fast mode.
+        Uses word-boundary matching on current_q first so session context never hijacks new questions.
         """
         q_lower = query_text.lower()
         parts = re.split(r"\s*\(context:", query_text, maxsplit=1, flags=re.IGNORECASE)
@@ -217,7 +255,22 @@ class SovereignNetOpsRAG:
         combined = "\n".join(c.get("content", "") for c in chunks)
         combined_lower = combined.lower()
 
-        is_troubleshoot_intent = any(t in current_q for t in (
+        # 0. Complete KnowledgeBase Summary / Catalog Inquiry
+        if cls._is_kb_summary_query(query_text):
+            ans = (
+                "Here is a complete summary of all topics, packages, and customer support guides covered in the "
+                "**SLTMobitel KnowledgeBase**:"
+            )
+            bullets = [
+                "**1. 4G LTE & Fibre (FTTH) Broadband Packages:** **4G LTE Anytime** (`20 GB` Rs. 535 to `400 GB` Rs. 7,990), **LTE Unlimited 2 / 4 / 8 Mbps** (Rs. 2,950–7,090), **Unlimited LTE Flash 5 & 10** (Rs. 2,350 / Rs. 4,090), and **Fibre FTTH** (`100 Mbps` to `1 Gbps` — *Fiber Starter, Trio Vibe/Shine, Unlimited Home/Pro/Edge/Turbo, Ultra Prime*, plus *Megaline-to-Fibre* migration).",
+                "**2. PEOTV & Fixed Voice Plans:** **PEOTV Channel Packages** (*PEO Bronze* 72 ch Rs. 860 up to *PEO HD Plus* 160 ch Rs. 3,125, *PEO 4G Elite*, *PEO Mobile* Rs. 249) and **Voice Plans** (*Unltd Home My Phone* Rs. 747/month, *Home/Office SLT Phone* Rs. 902/month, and Post-Paid *Upahara / Samurdhi / Garusaru* plans).",
+                "**3. Data Add-ons (Social, Streaming, Gaming & E-Learning):** **YouTube 7-Day** (`15 GB` Rs. 155), **Messenger/WhatsApp 7-Day** (`10 GB` Rs. 45), **Youth Add-on** (`20 GB` Rs. 195), **Entertainment Combo** (Rs. 1,990), **Streamer Premium** (`150 GB` Rs. 4,000), **Gamer Lite / Premium** (`25 GB` / `100 GB`), and **LMS Lite / Max** (`30 GB` / `100 GB`).",
+                "**4. USSD Shortcodes, Billing, eSIM, APN & mCash:** **`#1456#`** (Bill & Usage), **`#888#`** (Self-Care & Active Packages), **`#170#`** (Data Balance & Extra GB), **`#111#`** (mCash & bank top-ups), **`#999#`** (Roaming), **`*#06#`** (eSIM EID check), Mobile APN (**`mobitel`**), 75% Credit Limit SMS alerts, and New Connection document requirements.",
+                "**5. Troubleshooting, Enterprise & Support Channels:** Step-by-step troubleshooting for **Router & Wi-Fi Not Working**, **Slow Internet Speed / FUP Quota**, **Wireless Extender (WPS)**, and **Fixed Voice / Landphone lines**, plus **Enterprise Cloud / SDDC / Starlink** and 24x7 Support (**`1212`** Fixed/Fibre | **`1717`** Mobile | Receipt WhatsApp **`+94 71 175 5777`**)."
+            ]
+            return ans, bullets
+
+        is_troubleshoot_intent = cls._has_any_term(current_q, (
             "not working", "slow", "low speed", "speed is", "troubleshoot", "restart",
             "restarted", "reboot", "disconnected", "no connection", "no internet",
             "blinking", "problem", "issue", "fault", "broken", "socket", "outlet",
@@ -225,7 +278,7 @@ class SovereignNetOpsRAG:
         ))
 
         # 1A. Checking Active Packages / Active Data Packages / Active Call & Voice Packages (#888# / MySLT / #170#)
-        if any(w in q_lower for w in (
+        if cls._has_any_term(current_q, (
             "active", "activated", "activation", "activations", "my package", "current package",
             "upahara", "samurdhi", "garusaru", "kalaguna", "liyasara"
         )):
@@ -242,15 +295,15 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 1B. eSIM / *#06# Compatibility & New Connection Documents
-        if any(w in q_lower for w in ("esim", "e-sim", "eid", "06#", "document", "documents", "nic", "passport", "new connection")):
-            if "esim" in combined_lower or "*#06#" in combined_lower or "esim" in q_lower or "e-sim" in q_lower:
+        if cls._has_any_term(current_q, ("esim", "e-sim", "eid", "06#", "document", "documents", "nic", "passport", "new connection")):
+            if "esim" in combined_lower or "*#06#" in combined_lower or cls._has_any_term(current_q, ("esim", "e-sim", "eid", "06#")):
                 ans = "Here is how to check **SLTMobitel eSIM** compatibility and activate an eSIM:"
                 bullets = [
                     "**Verify Device eSIM Compatibility:** Dial **`*#06#`** on your phone and confirm that an **EID number** is displayed.",
                     "**Get Your eSIM:** Visit `https://sltmobitel.lk/esim` or any SLTMobitel branch/outlet with your **NIC / Driving License / Passport** to obtain your eSIM QR profile."
                 ]
                 return ans, bullets
-            if "required documents" in combined_lower or "application form" in combined_lower:
+            if "required documents" in combined_lower or "application form" in combined_lower or cls._has_any_term(current_q, ("document", "documents", "nic", "passport", "new connection")):
                 ans = "To obtain a **new SLTMobitel Prepaid or Postpaid connection** at a retail outlet, please provide:"
                 bullets = [
                     "**1. Completed Application Form**",
@@ -260,7 +313,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
         # 1C. mCash Account & Bank Top-Up Management
-        if "mcash" in q_lower or "m-cash" in q_lower or ("bank account" in q_lower and "mcash" in combined_lower):
+        if cls._has_any_term(current_q, ("mcash", "m-cash")) or ("bank account" in current_q and "mcash" in combined_lower):
             ans = "Here is how to manage your **SLTMobitel mCash** account and linked bank accounts:"
             bullets = [
                 "**Remove a Saved Bank Account in mCash:** Log in to the **mCash Main Menu** → Click **Top Up Via Bank Account** → Select the Bank Account → Tap the **Delete icon** → **Confirm**.",
@@ -269,7 +322,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 1D. Data Add-ons (YouTube, WhatsApp/Messenger, Gaming, LMS E-Learning, Streaming)
-        if any(w in q_lower for w in (
+        if cls._has_any_term(current_q, (
             "add-on", "addon", "addons", "extra gb", "youtube", "whatsapp", "messenger",
             "viber", "youth", "gamer", "gaming", "lms", "learning", "streamer", "entertainment combo"
         )):
@@ -283,7 +336,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 1E. USSD / Balance / Billing / Self-Care Portal
-        if any(w in q_lower for w in ("balance", "ussd", "code", "codes", "bill", "billing", "1456", "888", "170", "myslt", "usage")):
+        if cls._has_any_term(current_q, ("balance", "ussd", "code", "codes", "bill", "billing", "1456", "888", "170", "myslt", "usage")):
             ans = (
                 "You can check your **SLTMobitel Data & Bill Balance**, activate **Extra GB / Data Add-ons**, "
                 "and manage your account using the **MySLT App**, **Web Portal**, or **USSD Shortcodes**:"
@@ -297,7 +350,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 2A. Fibre (FTTH) Broadband Packages, Speeds & Megaline Migration
-        if not is_troubleshoot_intent and any(w in q_lower for w in ("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo", "100 mbps", "300 mbps", "1 gbps", "1000 mbps")):
+        if not is_troubleshoot_intent and cls._has_any_term(current_q, ("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo", "100 mbps", "300 mbps", "1 gbps", "1000 mbps")):
             ans = "Here are the **SLTMobitel Fibre (FTTH) Broadband** packages, speeds (up to `300 Mbps` / `1 Gbps`), and migration offers:"
             bullets = [
                 "**Fibre Anytime & Bundled Trio Packages:** **Fiber Starter:** `80 GB` (**Rs. 2,690**, `100/50 Mbps`) | **Trio Vibe:** `40 GB` (**Rs. 3,530**) | **Trio Vibe Plus:** `40 GB` (**Rs. 4,100**) | **Trio Shine:** `100 GB` (**Rs. 4,950**).",
@@ -308,8 +361,8 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 2B. PEOTV Packages (when specifically asking about PEOTV / TV / Channels)
-        if not is_troubleshoot_intent and any(w in q_lower for w in ("peotv", "peo", "channel", "channels", "television", "tv", "uthayam", "titanium", "platinum", "silver", "bronze", "gold")):
-            if not any(w in q_lower for w in ("lte", "4g", "broadband")):
+        if not is_troubleshoot_intent and cls._has_any_term(current_q, ("peotv", "peo", "channel", "channels", "television", "tv", "uthayam", "titanium", "platinum", "silver", "bronze", "gold")):
+            if not cls._has_any_term(current_q, ("lte", "4g", "broadband")):
                 ans = "Here are the **SLTMobitel PEOTV & PEO Mobile** packages and channel lineups:"
                 bullets = [
                     "**Premium & HD Packages:** **PEO HD Plus:** `160 channels` (**Rs. 3,125**) | **PEO Titanium:** `139 channels` (**Rs. 2,940**) | **PEO Platinum:** `125 channels` (**Rs. 2,660**).",
@@ -320,7 +373,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
         # 2C. 4G LTE Home Broadband, Unlimited Flash & General Package Inquiries
-        if not is_troubleshoot_intent and any(w in q_lower for w in ("package", "packages", "price", "prices", "lte", "4g", "broadband", "flash", "hbb", "plan", "plans", "unlimited", "anytime", "volte")):
+        if not is_troubleshoot_intent and cls._has_any_term(current_q, ("package", "packages", "price", "prices", "lte", "4g", "broadband", "flash", "hbb", "plan", "plans", "unlimited", "anytime", "volte")):
             ans = "Here are the **SLTMobitel 4G LTE Home Broadband, Unlimited Flash, Fibre, and PEOTV** packages:"
             bullets = [
                 "**4G LTE Anytime Packages (30 Days):** `20 GB` (**Rs. 535**) | **HBB Anytime 899:** `35 GB` (**Rs. 899**) | **HBB Anytime 1899:** `75 GB` (**Rs. 1,899**) | `115 GB` (**Rs. 2,590**) | **HBB Anytime 200GB:** **Rs. 3,990** | **HBB Anytime 400GB:** **Rs. 7,990**.",
@@ -331,8 +384,8 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 3. APN / SIM / Credit Limit / Value Added Services (VAS) / Roaming & IDD
-        if any(w in q_lower for w in ("apn", "sim", "credit limit", "vas", "value added", "mtunes", "gprs", "echannelling", "roaming", "idd", "international")):
-            if any(w in q_lower for w in ("roaming", "idd", "international", "abroad", "overseas")):
+        if cls._has_any_term(current_q, ("apn", "sim", "credit limit", "vas", "value added", "mtunes", "gprs", "echannelling", "roaming", "idd", "international")):
+            if cls._has_any_term(current_q, ("roaming", "idd", "international", "abroad", "overseas")):
                 ans = "Here are the **SLTMobitel International Roaming & IDD** details:"
                 bullets = [
                     "**Mobile & Fixed Roaming / IDD:** SLTMobitel offers tailored outbound/inbound Mobile Roaming, International SMS, and Fixed/Mobile IDD rates (`https://sltmobitel.lk/personal/idd-and-roaming`).",
@@ -349,7 +402,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 4. Payment Receipt / Complaint / Support Contact Channels / Branch Locations
-        if any(w in q_lower for w in (
+        if cls._has_any_term(current_q, (
             "complaint", "receipt", "whatsapp", "support", "contact", "branch", "branches",
             "office", "location", "locations", "store", "hotline", "number", "kandy", "jaffna", "airport", "gampaha"
         )):
@@ -366,7 +419,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 5. Enterprise / SME / Business Solutions (Cloud, SDDC, Cyber Security, Starlink)
-        if any(w in q_lower for w in ("enterprise", "business", "sme", "wholesale", "starlink", "cloud", "sddc", "cyber")):
+        if cls._has_any_term(current_q, ("enterprise", "business", "sme", "wholesale", "starlink", "cloud", "sddc", "cyber")):
             ans = (
                 "**SLTMobitel Business & Enterprise Solutions** provide ICT infrastructure for SMEs, "
                 "Micro Businesses, Enterprises, and Wholesale partners:"
@@ -378,7 +431,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 6A. Voice / Landphone Troubleshooting (Dial Tone, Noise on Line, Low Ringing Volume, Damaged Wire)
-        if any(w in q_lower for w in ("dial tone", "ringing", "tone volume", "noise", "disturbance", "telephone", "landphone", "landline", "phone wire", "voice")):
+        if cls._has_any_term(current_q, ("dial tone", "ringing", "tone volume", "noise", "disturbance", "telephone", "landphone", "landline", "phone wire", "voice")):
             ans = "Here are the **SLTMobitel Fixed Voice / Landphone Troubleshooting** steps:"
             bullets = [
                 "**No Dial Tone or Line Noise / Disturbance:** Check whether all telephone and ONT (`Phone 1`) cables are tightly connected.",
@@ -389,7 +442,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 6B. Wireless Extender (WPS) Setup
-        if any(w in current_q for w in ("extender", "wps", "repeater", "booster")):
+        if cls._has_any_term(current_q, ("extender", "wps", "repeater", "booster")):
             ans = "To connect your **Wireless Extender** to your SLTMobitel router using **WPS**:"
             bullets = [
                 "**1. Plug In:** Plug the wireless extender into a wall power outlet.",
@@ -399,13 +452,13 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 6C. Multi-Stage Router / Wi-Fi / Broadband / Slow-Speed / Power-Socket Troubleshooting
-        if any(w in q_lower for w in (
+        if cls._has_any_term(q_lower, (
             "router", "restart", "restarted", "reboot", "wifi", "wi-fi", "wlan", "cable", "cables",
             "slow", "speed", "disconnect", "connection", "connectivity", "internet", "broadband",
             "led", "blinking", "light", "lights", "socket", "outlet", "power", "button"
         )):
             # Stage 1: User already restarted / rebooted the router and the issue persists
-            if any(w in current_q for w in ("restarted", "rebooted", "already tried", "did that", "done that", "still slow", "still not working")):
+            if cls._has_any_term(current_q, ("restarted", "rebooted", "already tried", "did that", "done that", "still slow", "still not working")):
                 ans = "Since you have **already restarted the router** and the issue persists, follow these **post-restart diagnostic & escalation steps**:"
                 bullets = [
                     "**1. Verify Data Quota / FUP Throttling (`MySLT App` / `#170#`):** Check **MySLT App → Internet → Data Remaining** (`https://myslt.slt.lk/`) or dial **`#170#`**. If your Anytime or daily Flash quota is exhausted, speeds remain throttled even after a reboot until **Extra GB** is activated.",
@@ -416,10 +469,10 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
             # Stage 2: Slow Internet / Very Low Speed / Slow Connectivity
-            if any(w in current_q for w in ("slow", "low speed", "speed is very low", "speed is low", "very low", "lagging", "buffering", "high ping")) or (
-                "speed" in current_q and any(w in current_q for w in ("low", "bad", "poor", "drop", "issue"))
+            if cls._has_any_term(current_q, ("slow", "low speed", "speed is very low", "speed is low", "very low", "lagging", "buffering", "high ping")) or (
+                cls._has_any_term(current_q, ("speed",)) and cls._has_any_term(current_q, ("low", "bad", "poor", "drop", "issue"))
             ):
-                if any(w in context_part for w in ("slow", "speed", "lagging")):
+                if cls._has_any_term(context_part, ("slow", "speed", "lagging")):
                     ans = "If your **internet speed remains very low**, check these **SLTMobitel bandwidth, FUP Extra GB, and Wi-Fi signal steps**:"
                     bullets = [
                         "**1. Activate Extra GB if Quota is Exhausted (`#170#` / `MySLT App`):** If your monthly Anytime or daily Flash allowance is fully used, dial **`#170#`** or open the **MySLT App** (`https://myslt.slt.lk/`) to add **Extra GB** and restore full speed.",
@@ -439,7 +492,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
             # Stage 3: Router is Powered ON / Lights ON, But No Internet Connection ("it is on but/bot no connection")
-            if any(w in current_q for w in ("no connection", "no internet", "on but", "on bot", "lights are on", "router is on")):
+            if cls._has_any_term(current_q, ("no connection", "no internet", "on but", "on bot", "lights are on", "router is on")):
                 ans = "If your **router is powered ON but there is no internet connection**, follow these **SLTMobitel connection diagnostic steps**:"
                 bullets = [
                     "**1. Check `GPON / PON`, `LOS`, and `WLAN` LEDs:** Confirm **GPON / PON** is solid Green and **LOS** is OFF. If **LOS** is blinking Red, there is an outdoor/indoor Fibre signal break; if **WLAN** is OFF, press the **Wi-Fi/WLAN** button on the router.",
@@ -450,10 +503,10 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
             # Stage 4: Power Socket / Wall Outlet Confirmed Fine ("Power socket is fine", "Wall Socket is fine")
-            if any(w in current_q for w in ("power socket", "wall socket", "wall outlet", "socket is fine", "outlet is fine", "power is fine", "plug is fine", "adapter is fine")) or (
-                ("socket" in current_q or "outlet" in current_q) and any(w in current_q for w in ("fine", "ok", "working", "good"))
+            if cls._has_any_term(current_q, ("power socket", "wall socket", "wall outlet", "socket is fine", "outlet is fine", "power is fine", "plug is fine", "adapter is fine")) or (
+                cls._has_any_term(current_q, ("socket", "outlet")) and cls._has_any_term(current_q, ("fine", "ok", "working", "good"))
             ):
-                if any(w in context_part for w in ("socket", "outlet")):
+                if cls._has_any_term(context_part, ("socket", "outlet")):
                     ans = "With both your **power socket and wall outlet confirmed working**, check whether the **router LEDs light up** to isolate the fault:"
                     bullets = [
                         "**1. If Router Lights Are Completely OFF:** Check that the power adapter barrel plug is firmly connected to the router's `DC IN` port. If no lights turn on despite a working wall socket, call **`1212`** (or visit an SLTMobitel branch) for a **power adapter or router replacement**.",
@@ -476,7 +529,7 @@ class SovereignNetOpsRAG:
                 "doesnot", "does not", "doesn't", "did not", "didn't", "not working",
                 "nothing happens", "broken", "stuck", "dead", "won't", "wont", "cannot", "can't"
             )
-            if ("button" in current_q or "switch" in current_q) and any(sig in current_q for sig in button_fault_signals):
+            if cls._has_any_term(current_q, ("button", "switch")) and cls._has_any_term(current_q, button_fault_signals):
                 ans = "If the **router button is not responding**, try the following steps:"
                 bullets = [
                     "**Power-Cycle via Wall Socket:** Turn off the main wall power switch (or unplug the power adapter) for **30 seconds**, then plug it back in.",
@@ -580,7 +633,7 @@ class SovereignNetOpsRAG:
                 "llm_fallback_warning": None
             }
 
-        if active_mode in ("AWS_BEDROCK", "GEMINI_CLOUD"):
+        if active_mode in ("AWS_BEDROCK", "GEMINI_CLOUD") and not self._is_kb_summary_query(sanitized_query):
             prompt = self.llm_gateway.build_kb_qa_prompt(sanitized_query, chunks)
             try:
                 llm_res, engine_label = self._invoke_llm(
