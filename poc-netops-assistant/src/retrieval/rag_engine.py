@@ -149,6 +149,14 @@ class SovereignNetOpsRAG:
             return "addon"
         if w in ("prepaid", "postpaid"):
             return "paid"
+        if w in ("socket", "outlet", "plug", "plugged"):
+            return "outlet"
+        if w in ("restart", "restarted", "restarting", "reboot", "rebooted"):
+            return "restart"
+        if w in ("working", "works", "worked", "work"):
+            return "work"
+        if w in ("slow", "slower", "slowly"):
+            return "slow"
         if w.startswith("activ"):
             return "activ"
         if w.startswith("packag"):
@@ -203,8 +211,18 @@ class SovereignNetOpsRAG:
         the retrieved AWS KB chunks when an external LLM is offline or in fast mode.
         """
         q_lower = query_text.lower()
+        parts = re.split(r"\s*\(context:", query_text, maxsplit=1, flags=re.IGNORECASE)
+        current_q = parts[0].strip().lower()
+        context_part = parts[1].strip(" )").lower() if len(parts) > 1 else ""
         combined = "\n".join(c.get("content", "") for c in chunks)
         combined_lower = combined.lower()
+
+        is_troubleshoot_intent = any(t in current_q for t in (
+            "not working", "slow", "low speed", "speed is", "troubleshoot", "restart",
+            "restarted", "reboot", "disconnected", "no connection", "no internet",
+            "blinking", "problem", "issue", "fault", "broken", "socket", "outlet",
+            "on but", "on bot"
+        ))
 
         # 1A. Checking Active Packages / Active Data Packages / Active Call & Voice Packages (#888# / MySLT / #170#)
         if any(w in q_lower for w in (
@@ -279,7 +297,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 2A. Fibre (FTTH) Broadband Packages, Speeds & Megaline Migration
-        if any(w in q_lower for w in ("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo", "100 mbps", "300 mbps", "1 gbps", "1000 mbps")):
+        if not is_troubleshoot_intent and any(w in q_lower for w in ("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo", "100 mbps", "300 mbps", "1 gbps", "1000 mbps")):
             ans = "Here are the **SLTMobitel Fibre (FTTH) Broadband** packages, speeds (up to `300 Mbps` / `1 Gbps`), and migration offers:"
             bullets = [
                 "**Fibre Anytime & Bundled Trio Packages:** **Fiber Starter:** `80 GB` (**Rs. 2,690**, `100/50 Mbps`) | **Trio Vibe:** `40 GB` (**Rs. 3,530**) | **Trio Vibe Plus:** `40 GB` (**Rs. 4,100**) | **Trio Shine:** `100 GB` (**Rs. 4,950**).",
@@ -290,7 +308,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 2B. PEOTV Packages (when specifically asking about PEOTV / TV / Channels)
-        if any(w in q_lower for w in ("peotv", "peo", "channel", "channels", "television", "tv", "uthayam", "titanium", "platinum", "silver", "bronze", "gold")):
+        if not is_troubleshoot_intent and any(w in q_lower for w in ("peotv", "peo", "channel", "channels", "television", "tv", "uthayam", "titanium", "platinum", "silver", "bronze", "gold")):
             if not any(w in q_lower for w in ("lte", "4g", "broadband")):
                 ans = "Here are the **SLTMobitel PEOTV & PEO Mobile** packages and channel lineups:"
                 bullets = [
@@ -302,7 +320,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
         # 2C. 4G LTE Home Broadband, Unlimited Flash & General Package Inquiries
-        if any(w in q_lower for w in ("package", "packages", "price", "prices", "lte", "4g", "broadband", "flash", "hbb", "plan", "plans", "unlimited", "anytime", "volte")):
+        if not is_troubleshoot_intent and any(w in q_lower for w in ("package", "packages", "price", "prices", "lte", "4g", "broadband", "flash", "hbb", "plan", "plans", "unlimited", "anytime", "volte")):
             ans = "Here are the **SLTMobitel 4G LTE Home Broadband, Unlimited Flash, Fibre, and PEOTV** packages:"
             bullets = [
                 "**4G LTE Anytime Packages (30 Days):** `20 GB` (**Rs. 535**) | **HBB Anytime 899:** `35 GB` (**Rs. 899**) | **HBB Anytime 1899:** `75 GB` (**Rs. 1,899**) | `115 GB` (**Rs. 2,590**) | **HBB Anytime 200GB:** **Rs. 3,990** | **HBB Anytime 400GB:** **Rs. 7,990**.",
@@ -371,7 +389,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 6B. Wireless Extender (WPS) Setup
-        if any(w in q_lower for w in ("extender", "wps", "repeater", "booster")):
+        if any(w in current_q for w in ("extender", "wps", "repeater", "booster")):
             ans = "To connect your **Wireless Extender** to your SLTMobitel router using **WPS**:"
             bullets = [
                 "**1. Plug In:** Plug the wireless extender into a wall power outlet.",
@@ -380,15 +398,86 @@ class SovereignNetOpsRAG:
             ]
             return ans, bullets
 
-        # 6C. Router / Wi-Fi / Broadband Basic Troubleshooting Steps
-        if any(w in q_lower for w in ("router", "restart", "wifi", "wi-fi", "wlan", "cable", "slow", "disconnect", "connection", "internet", "led", "blinking", "light")):
-            unresolved_signals = (
+        # 6C. Multi-Stage Router / Wi-Fi / Broadband / Slow-Speed / Power-Socket Troubleshooting
+        if any(w in q_lower for w in (
+            "router", "restart", "restarted", "reboot", "wifi", "wi-fi", "wlan", "cable", "cables",
+            "slow", "speed", "disconnect", "connection", "connectivity", "internet", "broadband",
+            "led", "blinking", "light", "lights", "socket", "outlet", "power", "button"
+        )):
+            # Stage 1: User already restarted / rebooted the router and the issue persists
+            if any(w in current_q for w in ("restarted", "rebooted", "already tried", "did that", "done that", "still slow", "still not working")):
+                ans = "Since you have **already restarted the router** and the issue persists, follow these **post-restart diagnostic & escalation steps**:"
+                bullets = [
+                    "**1. Verify Data Quota / FUP Throttling (`MySLT App` / `#170#`):** Check **MySLT App → Internet → Data Remaining** (`https://myslt.slt.lk/`) or dial **`#170#`**. If your Anytime or daily Flash quota is exhausted, speeds remain throttled even after a reboot until **Extra GB** is activated.",
+                    "**2. Check Router `LOS` & `GPON / PON` Indicator Lights:** Confirm the **GPON / PON** light is solid Green and **LOS** is OFF. If **LOS** is Red or blinking, there is a physical Fibre signal fault.",
+                    "**3. Avoid the Recessed Pinhole 'Reset' Button:** Do **not** press the recessed pinhole *Reset* button, as it erases your factory PPPoE configuration.",
+                    "**4. Log a Technical Fault Ticket (`1212` / `MySLT App`):** Call **`1212`** (SLT Fixed/Fibre) or **`1717`** (Mobitel Mobile), or submit a fault ticket via the **MySLT App** so an SLT engineer can inspect your line and port remotely."
+                ]
+                return ans, bullets
+
+            # Stage 2: Slow Internet / Very Low Speed / Slow Connectivity
+            if any(w in current_q for w in ("slow", "low speed", "speed is very low", "speed is low", "very low", "lagging", "buffering", "high ping")) or (
+                "speed" in current_q and any(w in current_q for w in ("low", "bad", "poor", "drop", "issue"))
+            ):
+                if any(w in context_part for w in ("slow", "speed", "lagging")):
+                    ans = "If your **internet speed remains very low**, check these **SLTMobitel bandwidth, FUP Extra GB, and Wi-Fi signal steps**:"
+                    bullets = [
+                        "**1. Activate Extra GB if Quota is Exhausted (`#170#` / `MySLT App`):** If your monthly Anytime or daily Flash allowance is fully used, dial **`#170#`** or open the **MySLT App** (`https://myslt.slt.lk/`) to add **Extra GB** and restore full speed.",
+                        "**2. Optimize Wi-Fi Signal (5 GHz Band / Wireless Extender):** Connect to the **5 GHz Wi-Fi band** when near the router, or pair a **Wireless Extender via WPS** if weak Wi-Fi signal is causing low speed in other rooms.",
+                        "**3. Test via Direct Ethernet (LAN) Cable:** Connect a laptop directly with a LAN cable to verify whether the slowdown is caused by local Wi-Fi interference or the broadband line.",
+                        "**4. Restart Router or Report Speed Degradation (`1212`):** Power-cycle the router for 15–30 seconds; if speeds remain low, call **`1212`** to test your Fibre optical attenuation / line quality."
+                    ]
+                    return ans, bullets
+
+                ans = "To troubleshoot a **slow SLTMobitel Internet / Broadband connection**, follow these steps from the KnowledgeBase:"
+                bullets = [
+                    "**1. Check Data Usage & Quota (`MySLT App` / `#170#`):** Check whether your package quota is exceeded via the **MySLT App / Portal** (`https://myslt.slt.lk/`) or by dialing **`#170#`** (for example, *Unlimited Flash* packages throttle to `1 Mbps` after the daily 5 GB / 10 GB limit).",
+                    "**2. Restart the Router:** Power off the router, wait **15–30 seconds**, and switch it back on to refresh your broadband session.",
+                    "**3. Change Wi-Fi Password & Check Connected Devices:** Change your Wi-Fi password if unauthorized or background devices are consuming your bandwidth.",
+                    "**4. Check Telephone / Fibre Line Connections:** Verify that your telephone line or Fibre optical patch cord is tightly connected and undamaged."
+                ]
+                return ans, bullets
+
+            # Stage 3: Router is Powered ON / Lights ON, But No Internet Connection ("it is on but/bot no connection")
+            if any(w in current_q for w in ("no connection", "no internet", "on but", "on bot", "lights are on", "router is on")):
+                ans = "If your **router is powered ON but there is no internet connection**, follow these **SLTMobitel connection diagnostic steps**:"
+                bullets = [
+                    "**1. Check `GPON / PON`, `LOS`, and `WLAN` LEDs:** Confirm **GPON / PON** is solid Green and **LOS** is OFF. If **LOS** is blinking Red, there is an outdoor/indoor Fibre signal break; if **WLAN** is OFF, press the **Wi-Fi/WLAN** button on the router.",
+                    "**2. Check Account Status & Data Quota (`#1456#` / `MySLT App`):** Dial **`#1456#`** or open the **MySLT App** (`https://myslt.slt.lk/`) to confirm your account is active and your data quota is not exhausted.",
+                    "**3. Inspect Fibre / Telephone Patch Cords:** Ensure the yellow Fibre patch cord (or telephone cable into the splitter/ONT) is firmly seated.",
+                    "**4. Power-Cycle the Router (15–30 Seconds) or Call `1212`:** Switch off the router for 15–30 seconds and switch it back on (do **not** press the recessed pinhole *Reset* button). If still offline, call **`1212`** to report a line fault."
+                ]
+                return ans, bullets
+
+            # Stage 4: Power Socket / Wall Outlet Confirmed Fine ("Power socket is fine", "Wall Socket is fine")
+            if any(w in current_q for w in ("power socket", "wall socket", "wall outlet", "socket is fine", "outlet is fine", "power is fine", "plug is fine", "adapter is fine")) or (
+                ("socket" in current_q or "outlet" in current_q) and any(w in current_q for w in ("fine", "ok", "working", "good"))
+            ):
+                if any(w in context_part for w in ("socket", "outlet")):
+                    ans = "With both your **power socket and wall outlet confirmed working**, check whether the **router LEDs light up** to isolate the fault:"
+                    bullets = [
+                        "**1. If Router Lights Are Completely OFF:** Check that the power adapter barrel plug is firmly connected to the router's `DC IN` port. If no lights turn on despite a working wall socket, call **`1212`** (or visit an SLTMobitel branch) for a **power adapter or router replacement**.",
+                        "**2. If Router Lights Are ON But There Is No Connection:** Check whether the **`LOS` light is blinking Red** (Fibre line fault) or **`GPON` and `WLAN` are Green**, then restart the router for 15–30 seconds.",
+                        "**3. Verify Service & Quota Status (`MySLT App` / `#1456#`):** Check the **MySLT App** (`https://myslt.slt.lk/`) or dial **`#1456#`** to confirm your broadband connection is active."
+                    ]
+                    return ans, bullets
+
+                ans = "Since the **power socket is working**, please check your **router's power switch, adapter, and LED indicators** next:"
+                bullets = [
+                    "**1. Check Router Power Switch & Power LED:** Ensure the **Power ON/OFF button** on the back of the router is pressed **ON** and the **Power LED** is lit Green. (If the Power LED stays OFF on a working wall socket, the power adapter or router hardware may be faulty.)",
+                    "**2. Check `GPON / PON` and `LOS` Lights:** Confirm the **GPON / PON** light is solid Green and the **LOS** light is **OFF** (not blinking Red).",
+                    "**3. Check `WLAN / Wi-Fi` Light:** Verify that the **WLAN** light is ON; if it is OFF, press the **WLAN / Wi-Fi button** on the side/back of the router.",
+                    "**4. Inspect Fibre / Telephone Line:** Ensure the Fibre optical patch cord or telephone line is tightly plugged in, then restart the router for 15–30 seconds."
+                ]
+                return ans, bullets
+
+            # Stage 5: Physical Router Button Not Responding ("router button is not working", "restart button broken")
+            button_fault_signals = (
                 "doesnot", "does not", "doesn't", "did not", "didn't", "not working",
-                "nothing happens", "still", "already tried", "broken", "stuck", "dead",
-                "do anything", "won't", "wont", "cannot", "can't"
+                "nothing happens", "broken", "stuck", "dead", "won't", "wont", "cannot", "can't"
             )
-            if any(sig in q_lower for sig in unresolved_signals) and "wifi is not working" not in q_lower and "wi-fi is not working" not in q_lower:
-                ans = "If the router button is not responding, try the following steps:"
+            if ("button" in current_q or "switch" in current_q) and any(sig in current_q for sig in button_fault_signals):
+                ans = "If the **router button is not responding**, try the following steps:"
                 bullets = [
                     "**Power-Cycle via Wall Socket:** Turn off the main wall power switch (or unplug the power adapter) for **30 seconds**, then plug it back in.",
                     "**Avoid the Pinhole 'Reset' Button:** Do **not** hold the recessed pinhole *Reset* button, as that erases your SLT Fibre/4G PPPoE configuration.",
@@ -396,12 +485,13 @@ class SovereignNetOpsRAG:
                 ]
                 return ans, bullets
 
-            ans = "To troubleshoot or restart your **SLTMobitel Router & Wi-Fi** connection:"
+            # Stage 6: Initial "My Internet / Wi-Fi is Not Working" or "How to Restart / Troubleshoot Router"
+            ans = "To troubleshoot or restart your **SLTMobitel Router & Internet / Wi-Fi** connection:"
             bullets = [
-                "**1. Check Device & Router Power:** Ensure Wi-Fi is enabled on your phone/laptop and the router is powered on.",
+                "**1. Check Device & Router Power:** Ensure Wi-Fi is enabled on your phone/laptop and the router is plugged into a working wall socket and powered ON.",
                 "**2. Inspect Cable Connections:** Verify that all power, Fibre/telephone patch cords, and Ethernet cables are tightly connected.",
-                "**3. Verify Wi-Fi / WLAN & GPON LEDs:** Check that the **WLAN** light is ON (if OFF, press the **Wi-Fi/WLAN** button on the router) and the **GPON** light is solid Green.",
-                "**4. Restart the Router:** Power off the router, wait 15–30 seconds, and switch it back on (or check quota usage via the **MySLT App** / call **`1212`** if the issue persists)."
+                "**3. Verify Wi-Fi / WLAN & GPON LEDs:** Check that the **WLAN** light is ON (if OFF, press the **Wi-Fi/WLAN** button on the router), **GPON/PON** is solid Green, and **LOS** is OFF.",
+                "**4. Restart the Router:** Power off the router, wait **15–30 seconds**, and switch it back on (or check quota usage via the **MySLT App** / call **`1212`** if the issue persists)."
             ]
             return ans, bullets
 

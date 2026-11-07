@@ -276,6 +276,95 @@ def test_mcp_server_tools_and_jsonrpc_protocol():
     assert len(res_list["result"]["resources"]) >= 3
 
 
+def test_multi_turn_supervisor_troubleshooting_flow():
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    # 1. Verify clean_raw_kb_text drops Sinhala/Tamil translation columns & their English loanwords
+    raw_csv_chunk = (
+        'Wall outlet 2. Router WPS 3. Wireless Extender WPS\n'
+        '1. Wall outlet භාවිතා කරන්න. 2. WPS බොත්තම ඔබන්න. 3. Wireless extender-එකේ බොත්තම ඔබන්න.",'
+        '"1. Wall outlet பயன்படுத்துங்கள். 2. WPS பொத்தானை அழுத்துங்கள்." '
+        'Troubleshooting (Internet),Internet BB Troubleshoot FAQs,My wifi is not working'
+    )
+    cleaned_csv = SLTMobitelCloudKBClient.clean_raw_kb_text(raw_csv_chunk)
+    assert "Wall outlet ." not in cleaned_csv
+    assert "WPS ." not in cleaned_csv
+    assert "FAQ: My wifi is not working" in cleaned_csv
+
+    # 2. Replay the exact 7-turn supervisor troubleshooting transcript
+    troubleshoot_kb = {
+        "query": "troubleshooting internet router slow wifi",
+        "chunks": [
+            {
+                "doc_id": "SLT-AWS-KB-01",
+                "doc_title": "SLTMobitel Cloud KnowledgeBase (AWS)",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.68)",
+                "content": (
+                    "FAQ: My wifi is not working\n"
+                    "1. Check if Wi-Fi is enabled on your device and the router is powered on via wall outlet.\n"
+                    "2. Check if all cables are tightly connected.\n"
+                    "3. Check if WLAN light is on and GPON light is green.\n"
+                    "4. Restart the router.\n"
+                    "FAQ: Internet connection is slow\n"
+                    "1. Check usage to see if quota is exceeded via MySLT App/Portal (https://myslt.slt.lk/)\n"
+                    "2. Restart router\n"
+                    "3. Change Wi-Fi password\n"
+                    "4. Check if Telephone line is tightly connected."
+                ),
+                "raw_content": "",
+                "score": 0.68,
+                "rerank_score": 0.75,
+                "similarity_score": 0.75
+            }
+        ],
+        "count": 1
+    }
+
+    history = []
+    turns = [
+        "my internet is not working",
+        "Power socket is fine",
+        "Wall Socket is fine",
+        "it is On bot no connection",
+        "Ok now internet is working but very slow connectivity",
+        "Internet speed is very low",
+        "I restarted it"
+    ]
+    responses = []
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=troubleshoot_kb):
+        for user_msg in turns:
+            res = agent.run_agent(
+                user_msg,
+                route_mode="AUTO",
+                inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+                conversation_history=history
+            )
+            assert res["has_enough_knowledge"] is True, f"Failed on turn: {user_msg}"
+            assert "don't have enough knowledge" not in res["answer_markdown"].lower()
+            assert "don't have any additional troubleshooting" not in res["answer_markdown"].lower()
+            assert len(res["key_points"]) >= 3, f"Missing key points on turn: {user_msg}"
+            responses.append(res)
+            history.append({"user_input": user_msg, "agent_response": res})
+
+    # Turn 1 ("my internet is not working") must give initial troubleshooting, NOT "router button is not responding"
+    assert "button is not responding" not in responses[0]["answer_markdown"].lower()
+    # Turn 2 ("Power socket is fine") & Turn 3 ("Wall Socket is fine") must acknowledge socket/outlet
+    assert "power socket" in responses[1]["answer_markdown"].lower()
+    assert "wall outlet" in responses[2]["answer_markdown"].lower()
+    # Turn 4 ("it is On bot no connection") must address router ON with no internet connection
+    assert "powered on" in responses[3]["answer_markdown"].lower()
+    # Turn 5 ("very slow connectivity") & Turn 6 ("Internet speed is very low") must address slow speed & quota
+    assert "slow" in responses[4]["answer_markdown"].lower()
+    assert "quota" in " ".join(responses[4]["key_points"]).lower()
+    assert "speed" in responses[5]["answer_markdown"].lower()
+    assert responses[4]["answer_markdown"] != responses[5]["answer_markdown"]
+    # Turn 7 ("I restarted it") must give post-restart diagnostic & escalation steps
+    assert "already restarted" in responses[6]["answer_markdown"].lower()
+
+
+
 
 
 

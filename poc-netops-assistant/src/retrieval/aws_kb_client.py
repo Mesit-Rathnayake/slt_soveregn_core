@@ -101,22 +101,39 @@ class SLTMobitelCloudKBClient:
             .replace("\r", "\n")
         )
 
-        # 4. Remove Sinhala (U+0D80–U+0DFF) and Tamil (U+0B80–U+0BFF) script blocks FIRST
-        # so English FAQ columns mixed on the same line are never discarded by ASCII ratio filters
-        text = re.sub(r"[\u0D80-\u0DFF\u0B80-\u0BFF]+", " ", text)
-        text = re.sub(r'","', "\n", text)
+        # 4. Split CSV column boundaries and drop Sinhala (U+0D80–U+0DFF) / Tamil (U+0B80–U+0BFF)
+        # translation columns BEFORE stripping script characters, so English loanwords inside
+        # Sinhala/Tamil translations (e.g. "1. Wall outlet . 2. WPS .") do not remain as broken fragments.
+        text = re.sub(r'"\s*,\s*"', "\n", text)
+        text = re.sub(r',\s*"', "\n", text)
+        text = re.sub(r'"\s*,', "\n", text)
+        text = re.sub(r'"\s+(?=[A-Z])', "\n", text)
+        raw_lines = text.splitlines()
+        english_only_lines = [
+            ln for ln in raw_lines
+            if not re.search(r"[\u0D80-\u0DFF\u0B80-\u0BFF]", ln) and any(c.isalpha() for c in ln)
+        ]
+        if english_only_lines:
+            text = "\n".join(english_only_lines)
+        else:
+            text = re.sub(r"[\u0D80-\u0DFF\u0B80-\u0BFF]+", " ", text)
+
+        text = re.sub(r"Troubleshooting\s*\([^)]+\)\s*,\s*[^,]+FAQs\s*,\s*", "FAQ: ", text, flags=re.IGNORECASE)
         text = re.sub(r'[~•■□●]+', "• ", text)
         text = re.sub(r"[ \t]{2,}", " ", text)
 
-        # 5. Clean and deduplicate lines
+        # 5. Clean and deduplicate lines across the chunk
         clean_lines = []
+        seen_lower = set()
         for raw_ln in text.splitlines():
             ln = raw_ln.strip(' "\'\t,.-')
             if not ln or len(ln) < 3:
                 continue
             if not any(c.isalnum() for c in ln):
                 continue
-            if not clean_lines or clean_lines[-1].lower() != ln.lower():
+            ln_key = ln.lower()
+            if ln_key not in seen_lower:
+                seen_lower.add(ln_key)
                 clean_lines.append(ln)
 
         return "\n".join(clean_lines)

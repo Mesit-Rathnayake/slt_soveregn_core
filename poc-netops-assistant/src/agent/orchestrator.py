@@ -38,6 +38,11 @@ class SLTMobitelUnifiedAgent:
     ]
 
     FOLLOWUP_PRONOUNS = {"it", "this", "that", "they", "them", "its", "those", "these", "above", "same"}
+    TROUBLESHOOT_FOLLOWUP_TERMS = {
+        "socket", "outlet", "plug", "plugged", "adapter", "button", "light", "lights",
+        "led", "leds", "blinking", "restarted", "rebooted", "reboot", "checked",
+        "tried", "fine", "slow", "speed", "lagging", "buffering", "still", "cables", "cable"
+    }
 
     def __init__(self, manuals_dir: Path, enable_embeddings: bool = True):
         self.sanitizer = SovereignDataSanitizer()
@@ -93,7 +98,9 @@ class SLTMobitelUnifiedAgent:
             "addon", "addons", "youtube", "whatsapp", "messenger", "mcash", "upahara", "samurdhi",
             "flash", "trio", "unlimited", "anytime", "gamer", "lms", "streamer", "extender",
             "wps", "branch", "contact", "hotline", "1212", "1717", "prepaid", "postpaid",
-            "volte", "megaline", "phone", "voice", "enterprise", "sme", "cloud", "cyber"
+            "volte", "megaline", "phone", "voice", "enterprise", "sme", "cloud", "cyber",
+            "internet", "connection", "connectivity", "speed", "slow", "socket", "outlet",
+            "cable", "cables", "light", "lights", "led", "button", "restarted", "reboot", "working"
         }
         if any(w in domain_terms for w in words):
             return None
@@ -165,21 +172,27 @@ class SLTMobitelUnifiedAgent:
         return None
 
     @classmethod
-    def _is_true_followup_question(cls, user_input: str) -> bool:
+    def _is_true_followup_question(cls, user_input: str, prev_route: str = "") -> bool:
         """
-        Only links previous turn context if the user's message is a short follow-up
-        that explicitly references the previous turn via pronouns ('this', 'it', 'that')
-        or starts with 'and', 'what about', 'how about', 'also'.
-        Prevents bleeding old incident tickets into brand-new questions!
+        Links previous turn context if the user's message is a short follow-up
+        that references the previous turn via pronouns ('this', 'it', 'that'),
+        continuation phrases ('and', 'what about', 'ok now', 'still'), or
+        troubleshooting status updates ('power socket is fine', 'wall socket is fine', 'restarted').
+        Prevents bleeding old NetOps incident tickets into unrelated questions!
         """
         words = re.findall(r"[a-zA-Z]+", user_input.lower())
-        if not words or len(words) > 9:
+        if not words or len(words) > 12:
             return False
         if any(w in cls.FOLLOWUP_PRONOUNS for w in words):
             return True
         lower_s = user_input.strip().lower()
         if lower_s.startswith(("and ", "what about", "how about", "also ", "why did")):
             return True
+        if prev_route != "NETOPS_INCIDENT":
+            if lower_s.startswith(("ok now", "now ", "still ", "already ", "but ")):
+                return True
+            if any(w in cls.TROUBLESHOOT_FOLLOWUP_TERMS for w in words):
+                return True
         return False
 
     def run_agent(
@@ -288,12 +301,15 @@ class SLTMobitelUnifiedAgent:
 
         # Build conversational context window ONLY if the user is genuinely referring to the previous turn
         clean_text = clean_user_input
-        if conversation_history and self._is_true_followup_question(clean_user_input):
+        if conversation_history:
             last_turn = conversation_history[-1]
-            prev_sanitized = last_turn.get("agent_response", {}).get("sanitized_text") or last_turn.get("user_input", "")
-            if prev_sanitized:
-                clean_text = f"{clean_user_input} (Context: {prev_sanitized[:140]})"
-                trace_steps.append("💬 **Conversational Memory:** Linked follow-up pronoun with sanitized previous turn.")
+            last_route = last_turn.get("agent_response", {}).get("intent_route", "")
+            if self._is_true_followup_question(clean_user_input, prev_route=last_route):
+                prev_sanitized = last_turn.get("agent_response", {}).get("sanitized_text") or last_turn.get("user_input", "")
+                if prev_sanitized:
+                    prev_flat = re.sub(r"\(Context:\s*([^)]+)\)", r"- \1", prev_sanitized).strip()
+                    clean_text = f"{clean_user_input} (Context: {prev_flat[:160]})"
+                    trace_steps.append("💬 **Conversational Memory:** Linked follow-up with sanitized previous turn.")
 
         # Step 2: Input Guardrails
         in_guard = self.guardrails.evaluate_input_guardrails(user_input, clean_text, redactions)
