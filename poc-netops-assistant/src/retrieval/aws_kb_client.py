@@ -160,13 +160,15 @@ class SLTMobitelCloudKBClient:
         load_dotenv_file(env_path)
         self.cloudfront = SLTCloudFrontEdgeGateway(env_path=env_path)
         self.endpoint_url = (
-            endpoint_url
-            or os.getenv("SLT_KB_API_URL", self.DEFAULT_ENDPOINT)
-        ).strip()
+            endpoint_url.strip()
+            if endpoint_url and endpoint_url.strip()
+            else self.cloudfront.api_gateway_origin
+        )
         self.auth_secret = (
-            auth_secret
-            or os.getenv("SLT_KB_AUTH_SECRET", self.DEFAULT_SECRET)
-        ).strip()
+            auth_secret.strip()
+            if auth_secret and auth_secret.strip()
+            else self.cloudfront.origin_custom_secret
+        )
         self.default_top_k = int(os.getenv("SLT_KB_DEFAULT_TOP_K", "3"))
 
     def retrieve(

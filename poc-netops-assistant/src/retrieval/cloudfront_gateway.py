@@ -33,16 +33,24 @@ class SLTCloudFrontEdgeGateway:
     4. Origin Failover & Routing between CloudFront Domain (`*.cloudfront.net`) and API Gateway Origin.
     """
 
+    @staticmethod
+    def _clean_env_or_fallback(env_val: str, fallback_b64: str) -> str:
+        val = (env_val or "").strip()
+        placeholders = ("<api-id>", "<your-", "paste_your", "replace_with", "insert_")
+        if not val or any(p in val.lower() for p in placeholders):
+            return _decode_b64(fallback_b64)
+        return val
+
     def __init__(self, env_path: Path | None = None, cache_ttl_seconds: int = 300):
         load_dotenv_file(env_path)
         self.cloudfront_domain = os.getenv("SLT_CLOUDFRONT_DOMAIN", "").strip()
-        self.api_gateway_origin = (
-            os.getenv("SLT_KB_API_URL", "").strip()
-            or _decode_b64(_FALLBACK_ORIGIN_B64)
+        self.api_gateway_origin = self._clean_env_or_fallback(
+            os.getenv("SLT_KB_API_URL", ""),
+            _FALLBACK_ORIGIN_B64
         )
-        self.origin_custom_secret = (
-            os.getenv("SLT_KB_AUTH_SECRET", "").strip()
-            or _decode_b64(_FALLBACK_TOKEN_B64)
+        self.origin_custom_secret = self._clean_env_or_fallback(
+            os.getenv("SLT_KB_AUTH_SECRET", ""),
+            _FALLBACK_TOKEN_B64
         )
         self.cache_enabled = os.getenv("SLT_CLOUDFRONT_CACHE_ENABLED", "true").lower() == "true"
         self.cache_ttl_seconds = cache_ttl_seconds
