@@ -87,11 +87,11 @@ class SovereignLLMGateway:
             context_blocks.append(f"[{c['doc_id']} - {c['section']}]\n{c['content']}")
         context_str = "\n\n".join(context_blocks)
 
-        return f"""You are the SLT Network Operations (NetOps) AI Assistant.
-Analyze the NETWORK REQUEST / TICKET below using ONLY the APPROVED SLT SOP CONTEXT provided.
+        return f"""You are a Network Operations (NetOps) AI Assistant.
+Analyze the NETWORK REQUEST / TICKET below using ONLY the APPROVED SOP CONTEXT provided.
 
 STRICT RULES:
-1. If the user's question is general or NOT covered by the provided SLT SOPs (for example, "How do I make my home router fast?"), set "has_enough_knowledge" to false, "escalation_required" to false, and set "diagnosis_summary" to: "I don't have enough knowledge in the SLT Network Operations SOPs to answer that question."
+1. If the user's question is general or NOT covered by the provided SOPs, set "has_enough_knowledge" to false, "escalation_required" to false, and set "diagnosis_summary" to: "I don't have enough knowledge to answer that question."
 2. Write every item in "recommended_actions" as a plain, complete English sentence (NEVER output nested JSON objects or placeholder words like "First step with").
 3. Enforce Read-Only Advisory Mode: never recommend autonomous configuration changes or clearing routing processes.
 4. Respond ONLY with a valid JSON object matching this exact schema:
@@ -99,16 +99,16 @@ STRICT RULES:
   "has_enough_knowledge": true,
   "severity": "CRITICAL",
   "escalation_required": true,
-  "escalation_target": "SLT Tier-3 Core Transport Team",
+  "escalation_target": "Tier-3 Core Transport Team",
   "diagnosis_summary": "Clear 2-sentence explanation of the root cause based on the SOP thresholds.",
   "recommended_actions": [
-    "Escalate immediately to the relevant SLT engineering team as specified in the SOP.",
+    "Escalate immediately to the relevant engineering team as specified in the SOP.",
     "Run the read-only CLI verification command from the SOP to check interface or protocol status.",
     "Do not reset interfaces or clear routing processes on production routers."
   ]
 }}
 
-=== APPROVED SLT SOP CONTEXT ===
+=== APPROVED SOP CONTEXT ===
 {context_str}
 
 === NETWORK REQUEST / TICKET ===
@@ -121,14 +121,14 @@ STRICT RULES:
             context_blocks.append(f"--- PASSAGE {idx} ---\n{c['content'].strip()}")
         context_str = "\n\n".join(context_blocks) if context_blocks else "No relevant information found."
 
-        return f"""You are a helpful, professional SLTMobitel customer and technical support assistant.
-Answer the USER QUESTION clearly, naturally, and concisely using the reference information below. Speak directly to the customer as a knowledgeable expert. Avoid robotic phrases like "according to the knowledge base" or "in our knowledge base".
+        return f"""You are a helpful, direct AI assistant.
+Answer the USER QUESTION clearly, naturally, and concisely using the reference information below. Do not use robotic phrases like "according to the knowledge base", "in our knowledge base", or unsolicited corporate disclaimers.
 
 STRICT RULES:
 1. Answer ONLY if the reference passages actually contain the information needed to answer the USER QUESTION.
-2. If the user is following up on a troubleshooting session (e.g., reporting that the power socket is fine, the router is on with no connection, internet is slow, or they already restarted it), acknowledge their update and suggest ONLY the next steps that actually appear in the passages that they have not tried yet. If none remain, advise contacting SLTMobitel Support (1212 / 1717) or the MySLT App.
+2. If the user is following up on a troubleshooting session (e.g., reporting that the power socket is fine, the router is on with no connection, internet is slow, or they already restarted it), acknowledge their update and suggest ONLY the next steps that actually appear in the passages that they have not tried yet.
 3. NEVER add facts, prices, USSD codes, LED names, timings, phone numbers or procedures that are not written in the passages.
-4. If the passages are completely unrelated to the user's question, set "has_enough_knowledge" to false and set "answer" to: "I don't have enough knowledge to answer that specific question. You can contact support at 1212 (Fixed/Fibre) or 1717 (Mobile), or check the MySLT App."
+4. If the passages are unrelated to the user's question, set "has_enough_knowledge" to false and set "answer" to: "I don't have enough knowledge to answer that question."
 5. Write in clean, natural, human-friendly English. Do NOT dump raw database text, chunk IDs, or technical metadata.
 6. Respond ONLY with a valid JSON object matching this exact schema:
 {{
@@ -138,7 +138,7 @@ STRICT RULES:
     "Short, helpful bullet point 1 (leave empty [] if has_enough_knowledge is false)",
     "Short, helpful bullet point 2"
   ],
-  "follow_up_suggestion": "Optional helpful next step."
+  "follow_up_suggestion": ""
 }}
 
 === REFERENCE PASSAGES ===

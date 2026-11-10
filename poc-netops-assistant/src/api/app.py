@@ -31,8 +31,8 @@ from agent.llm_gateway import SovereignLLMGateway
 from retrieval.cloudfront_gateway import SLTCloudFrontEdgeGateway
 
 st.set_page_config(
-    page_title="SLTMobitel AI Assistant",
-    page_icon="🌐",
+    page_title="AI Assistant",
+    page_icon="💬",
     layout="wide"
 )
 
@@ -175,14 +175,34 @@ incidents_dir = BASE_DIR / "data" / "synthetic_incidents"
 audit_log_path = BASE_DIR / "data" / "audit_trail.jsonl"
 
 
+def _compute_code_hash() -> str:
+    """Computes a fast hash of source file modification times so Streamlit invalidates cache on any code change."""
+    h = hashlib.md5()
+    for py_file in sorted(SRC_DIR.rglob("*.py")):
+        try:
+            h.update(f"{py_file.name}:{py_file.stat().st_mtime_ns}".encode("utf-8"))
+        except OSError:
+            pass
+    return h.hexdigest()
+
+
 @st.cache_resource
-def get_agent_and_governance(_version: str = "v7.9"):
-    agent_inst = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+def get_agent_and_governance(_code_hash: str):
+    import agent.llm_gateway as llm_mod
+    importlib.reload(cf_mod)
+    importlib.reload(aws_kb_mod)
+    importlib.reload(llm_mod)
+    importlib.reload(rag_mod)
+    importlib.reload(voice_mod)
+    importlib.reload(mcp_mod)
+    importlib.reload(guard_mod)
+    importlib.reload(orch_mod)
+    agent_inst = orch_mod.SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
     gov_inst = SovereignGovernanceManager(audit_log_path=audit_log_path)
     return agent_inst, gov_inst
 
 
-agent, governance = get_agent_and_governance()
+agent, governance = get_agent_and_governance(_compute_code_hash())
 if not hasattr(agent.rag.aws_kb_client, "cloudfront"):
     agent.rag.aws_kb_client.cloudfront = SLTCloudFrontEdgeGateway(env_path=BASE_DIR / ".env")
 
@@ -211,8 +231,8 @@ with st.sidebar:
     st.markdown(
         """
         <div class="sidebar-brand">
-            <p class="sidebar-brand-title">SLTMobitel AI</p>
-            <p class="sidebar-brand-sub">Customer & NetOps Assistant</p>
+            <p class="sidebar-brand-title">AI Assistant</p>
+            <p class="sidebar-brand-sub">Support & Operations</p>
         </div>
         """,
         unsafe_allow_html=True
@@ -326,15 +346,6 @@ def render_assistant_message(turn: dict, turn_index: int, is_latest: bool = Fals
                     st.markdown(f"**{idx}. `{ch['doc_id']}`** (`{sc}`)")
                     st.caption(ch["content"])
 
-    if is_latest and turn.get("suggested_followups"):
-        f_cols = st.columns(len(turn["suggested_followups"]))
-        for i, follow_q in enumerate(turn["suggested_followups"]):
-            with f_cols[i]:
-                if st.button(follow_q, key=f"followup_{turn_index}_{i}", use_container_width=True):
-                    queue_prompt(follow_q, route="AUTO")
-                    st.rerun()
-
-
 # ---------------------------------------------------------------------------
 # MAIN INTERFACE
 # ---------------------------------------------------------------------------
@@ -342,10 +353,9 @@ st.markdown(
     """
     <div class="slt-header">
         <div>
-            <p class="slt-header-title">SLTMobitel Assistant</p>
-            <p class="slt-header-sub">Broadband, PEOTV, Mobile Self-Care & Network Operations</p>
+            <p class="slt-header-title">AI Assistant</p>
+            <p class="slt-header-sub">Technical Support & Network Operations</p>
         </div>
-        <span class="slt-status-pill">1212 / 1717 Voice & Text Ready</span>
     </div>
     """,
     unsafe_allow_html=True

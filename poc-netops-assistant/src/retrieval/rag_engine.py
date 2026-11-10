@@ -225,7 +225,7 @@ class SovereignNetOpsRAG:
         r"\bweather\s+in\b",
         r"\b(?:python|java|javascript|c\+\+|html|sql|react)\s+code\b",
         r"\b(?:write|generate)\s+(?:a\s+)?(?:poem|essay|story|song|code|script)\b",
-        r"\b(?:recipe|cook|bake|chicken|curry|pizza)\b",
+        r"\b(?:recipe|cook|bake|chicken|curry|pizza|dhal)\b",
         r"\b(?:cricket|football|soccer|world\s+cup|olympics|movie|actor|actress)\b",
         r"\b(?:book\s+a\s+flight|flight\s+ticket|hotel\s+booking|visa\s+application|renew\s+(?:my\s+)?passport)\b"
     )
@@ -298,7 +298,7 @@ class SovereignNetOpsRAG:
 
         # 0. Complete summary (sourced from the reconstructed catalog)
         if cls._is_kb_summary_query(query_text):
-            ans = "Here is a complete summary of available SLTMobitel services, packages, and support topics:"
+            ans = "Here is a complete summary of available services, packages, and support topics:"
             bullets = [
                 "**1. Broadband packages:** **4G LTE** (Anytime volume packages from `20 GB` Rs. 535 to `400 GB` Rs. 7,990; LTE Unlimited 2/4/8 Mbps; Unlimited LTE Flash 5 & 10) and **Fibre (FTTH)** packages from *Fiber Starter* (Rs. 2,690) to *Ultra Prime* (`1000/500 Mbps`), plus Megaline-to-Fibre migration offers.",
                 "**2. PEOTV & fixed voice:** PEOTV packages from *PEO Bronze* (72 channels, Rs. 860) to *PEO HD Plus* (160 channels, Rs. 3,125), *PEO 4G Elite*, *PEO Mobile* (Rs. 249), and unlimited fixed voice plans (Rs. 747 / Rs. 902 per month).",
@@ -335,12 +335,12 @@ class SovereignNetOpsRAG:
             # Check data quota / remaining data specifically
             if asks("quota", "remaining", "reamaining", "remainig", "remains", "data remaining", "data quota",
                     "how much data", "data left", "check data") or (asks("check", "view", "how to check") and asks("quota", "data")):
-                ans = "To check the **remaining data quota and balance** of your SLTMobitel package, use the **MySLT App** or these self-care channels:"
+                ans = "To check your **remaining data quota and balance**, use the **MySLT App** or these self-care channels:"
                 bullets = [
                     "**1. MySLT App / Web Portal (`https://myslt.slt.lk/`):** Navigate to **Internet → Data Remaining** to view your real-time daily/monthly quota. Select *Data Remaining → More → Enable Detailed Reports* for breakdown reports.",
                     "**2. USSD `#170#`:** Dial **`#170#`** on your mobile to view remaining data balances and active add-on volume.",
                     "**3. USSD `#1456#` (or `1456` IVR):** Dial **`#1456#`** to view current data usage, total billed usage, account balance, and credit limit.",
-                    "**4. SMS Self-Care (Mobitel):** Type **`DB`** and send it via SMS to **`7678`** to receive your remaining data balance.",
+                    "**4. SMS Self-Care:** Type **`DB`** and send it via SMS to **`7678`** to receive your remaining data balance.",
                     "**5. `#888#` Self-Care Portal:** Dial **`#888#`** → Select **My Package** or **My Activations** to verify your active Pre-Paid or Post-Paid package details."
                 ]
                 return ans, bullets
@@ -348,7 +348,7 @@ class SovereignNetOpsRAG:
             # Check active packages specifically
             if asks("active", "activated", "activation", "activations", "my package", "current package",
                     "upahara", "samurdhi", "garusaru", "kalaguna", "liyasara"):
-                ans = "You can check your **active SLTMobitel packages** using these self-care channels:"
+                ans = "You can check your **active packages** using these self-care channels:"
                 bullets = [
                     "**`#888#` Self-Care Portal:** Select **My Package** or **My Activations** to see active Pre-Paid/Post-Paid packages, activate/deactivate plans, and check PUK codes.",
                     "**Data remaining (`#170#` / MySLT App):** MySLT App → Internet → Data Remaining (`https://myslt.slt.lk/`).",
@@ -358,7 +358,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
             # USSD / balance / billing general
-            ans = "You can check your **SLTMobitel data and bill balance** using the **MySLT App** or these USSD codes:"
+            ans = "You can check your **data and bill balance** using the **MySLT App** or these USSD codes:"
             bullets = [
                 "**`#1456#` (or `1456` IVR):** Current usage, account balance, last month bill, total billed usage, last payment, billed date, billing period and credit limit.",
                 "**`#888#` Self-Care Portal:** My Package, My Activations, Pre-Paid/Post-Paid plans and PUK codes.",
@@ -367,12 +367,12 @@ class SovereignNetOpsRAG:
             ]
             return ans, bullets
 
-        # 1AA. Mobitel Data Loan Facility (#170#)
+        # 1AA. Data Loan Facility (#170#)
         if asks("loan", "data loan", "borrow", "borrow data", "emergency data") and grounded(
                 "loan", "170", "7678", "recharge", "repay", "data loan", "recovery"):
             # If asking how to check data loan balance specifically
             if asks("balance", "remaining", "check", "available") and not asks("get", "activate", "how to get", "obtain", "repay", "pay"):
-                ans = "Here is how to check your **Mobitel Data Loan balance**:"
+                ans = "To check your **Data Loan balance**:"
                 bullets = [
                     "**1. SMS Self-Care:** Type **`DB`** and send it via SMS to **`7678`**.",
                     "**2. USSD:** Dial **`#170#`** on your mobile."
@@ -381,7 +381,7 @@ class SovereignNetOpsRAG:
 
             # If asking how to repay a data loan
             if asks("repay", "re-pay", "recover", "recovery", "settle", "pay back"):
-                ans = "Here is how to **re-pay your Mobitel Data Loan**:"
+                ans = "How **Data Loan repayment** works:"
                 bullets = [
                     "**Automatic recovery upon recharge:** The loan amount + service charge is automatically recovered when you perform a normal recharge or a voice/data package recharge.",
                     "**Full recovery:** If your recharge amount is sufficient, the total loan and service fee are deducted entirely.",
@@ -390,7 +390,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
             # Default: How to get / activate a data loan
-            ans = "To obtain a **Mobitel Data Loan**, follow these steps on your phone:"
+            ans = "To get a **Data Loan**, follow these steps on your phone:"
             bullets = [
                 "**Step 1:** Dial **`#170#`** on your phone.",
                 "**Step 2:** Select **Option 8 (“Data Loan”)**.",
@@ -402,7 +402,7 @@ class SovereignNetOpsRAG:
 
         # 1B. eSIM & new-connection documents
         if asks("esim", "e-sim", "eid", "06#") and grounded("esim", "e-sim", "06#", "eid"):
-            ans = "Here is how to check **SLTMobitel eSIM** compatibility:"
+            ans = "To check **eSIM compatibility**:"
             bullets = [
                 "**Check compatibility:** Dial **`*#06#`** on your phone and confirm that an **EID number** is displayed.",
                 "**More information:** `https://sltmobitel.lk/esim`."
@@ -410,7 +410,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
         if asks("document", "documents", "nic", "passport", "new connection") and grounded(
                 "application form", "billing proof", "passport", "driving license", "identity card"):
-            ans = "To get a **new SLTMobitel connection**, you will need the following documents:"
+            ans = "Required documents for a **new connection**:"
             bullets = [
                 "**1. Completed application form**",
                 "**2. Identity proof:** National Identity Card (NIC), Driving License, or Passport.",
@@ -420,7 +420,7 @@ class SovereignNetOpsRAG:
 
         # 1C. mCash
         if asks("mcash", "m-cash") and grounded("mcash", "m-cash"):
-            ans = "Here is how to manage **SLTMobitel mCash**:"
+            ans = "How to manage **mCash**:"
             bullets = [
                 "**Remove a saved bank account:** mCash Main Menu → **Top Up Via Bank Account** → select the bank account → tap the **Delete** icon → **Confirm**.",
                 "**mCash USSD:** Dial **`#111#`**."
@@ -431,7 +431,7 @@ class SovereignNetOpsRAG:
         if asks("add-on", "addon", "addons", "extra gb", "youtube", "whatsapp", "messenger", "viber",
                 "youth", "gamer", "gaming", "lms", "learning", "streamer", "entertainment combo") and grounded(
                 "youtube", "messenger", "gamer", "lms", "streamer", "add-on", "addon", "youth", "entertainment"):
-            ans = "Here are the **SLTMobitel data add-ons** (manage them via the **MySLT App** / `#170#`):"
+            ans = "Available **data add-ons** (manage via the **MySLT App** / `#170#`):"
             bullets = [
                 "**Social & video (7 days):** YouTube `15 GB` — **Rs. 155** | Messenger `10 GB` (WhatsApp, Viber, Messenger) — **Rs. 45** | Youth Add-on `20 GB` — **Rs. 195**.",
                 "**Streaming (monthly):** Entertainment Combo (unlimited entertainment streaming) — **Rs. 1,990** | Streamer Premium `150 GB` — **Rs. 4,000**.",
@@ -443,7 +443,7 @@ class SovereignNetOpsRAG:
         # 2A. Fibre packages
         if not is_troubleshoot_intent and not is_quota_or_balance_intent and asks("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo") and grounded(
                 "fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo"):
-            ans = "Here are the **SLTMobitel Fibre (FTTH)** packages (`100 Mbps` to `1 Gbps`):"
+            ans = "**Fibre (FTTH)** broadband packages (`100 Mbps` to `1 Gbps`):"
             bullets = [
                 "**Volume & Trio:** Fiber Starter `80 GB` — **Rs. 2,690** (`100/50 Mbps`) | Trio Vibe `40 GB` — **Rs. 3,530** | Trio Vibe Plus `40 GB` — **Rs. 4,100** | Trio Shine `100 GB` — **Rs. 4,950**.",
                 "**Unlimited:** Unlimited Home — **Rs. 5,900** (`100/50`) | Unlimited Home Plus — **Rs. 9,900** (`200/100`) | Unlimited Twin — **Rs. 14,900** (`200/200`) | Unlimited Pro — **Rs. 19,900** (`500/200`).",
@@ -457,7 +457,7 @@ class SovereignNetOpsRAG:
                                                "uthayam", "titanium", "platinum", "silver", "bronze", "gold") and grounded(
                 "peo", "peotv", "channel", "channels"):
             if not asks("lte", "4g", "broadband"):
-                ans = "Here are the **SLTMobitel PEOTV** packages:"
+                ans = "**PEOTV** packages:"
                 bullets = [
                     "**Premium:** PEO HD Plus `160 ch` — **Rs. 3,125** | PEO Titanium `139 ch` — **Rs. 2,940** | PEO Platinum `125 ch` — **Rs. 2,660**.",
                     "**Mid-tier:** PEO Gold `108 ch` — **Rs. 2,100** | PEO Entertainment `112 ch` — **Rs. 1,875** | PEO Family `100 ch` — **Rs. 1,625**.",
@@ -470,7 +470,7 @@ class SovereignNetOpsRAG:
         if not is_troubleshoot_intent and not is_quota_or_balance_intent and asks("package", "packages", "price", "prices", "lte", "4g", "broadband",
                                                "flash", "hbb", "plan", "plans", "unlimited", "anytime", "volte") and grounded(
                 "lte", "4g", "hbb", "anytime", "flash", "unlimited", "package", "packages", "rs", "peo", "peotv"):
-            ans = "Here are the **SLTMobitel 4G LTE Home Broadband, Unlimited Flash, Fibre, and PEOTV** packages:"
+            ans = "**4G LTE Home Broadband, Unlimited Flash, Fibre, and PEOTV** packages:"
             bullets = [
                 "**Anytime (volume):** `20 GB` — **Rs. 535** (30 days) | HBB Anytime 899 `35 GB` | HBB Anytime 1899 `75 GB` | `115 GB` — **Rs. 2,590** | `200 GB` — **Rs. 3,990** | `400 GB` — **Rs. 7,990**.",
                 "**LTE Unlimited & Flash:** 2 Mbps — **Rs. 2,950** | 4 Mbps — **Rs. 5,150** | 8 Mbps — **Rs. 7,090** | **Unlimited LTE Flash 5:** **Rs. 2,350** (`5 GB/day` then `1 Mbps`) | **Unlimited LTE Flash 10:** **Rs. 4,090** (`10 GB/day` then `1 Mbps`, free unlimited `12 midnight – 7 AM`).",
@@ -481,7 +481,7 @@ class SovereignNetOpsRAG:
 
         # 3. APN / SIM / credit limit / VAS / roaming
         if asks("roaming", "idd", "international", "abroad", "overseas") and grounded("roaming", "idd", "999"):
-            ans = "Here is the **SLTMobitel roaming & IDD** information:"
+            ans = "**Roaming & IDD** information:"
             bullets = [
                 "**Check rates / activate:** Dial **`#999#`**.",
                 "**Details:** `https://sltmobitel.lk/personal/idd-and-roaming` (Mobile/Fixed IDD and outbound/inbound roaming rates)."
@@ -489,7 +489,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
         if asks("apn", "sim", "credit limit", "gprs", "vas", "value added", "mtunes", "echannelling") and grounded(
                 "apn", "sim", "credit limit", "gprs", "mobitel", "vas", "value", "mtunes", "echannelling"):
-            ans = "Here are the **SLTMobitel APN, SIM, credit-limit and VAS** details:"
+            ans = "**APN, SIM, credit limit, and VAS** details:"
             bullets = [
                 "**Mobile data APN:** Set the GPRS / mobile data APN to **`mobitel`**.",
                 "**Triple-cut SIM:** 3-in-1 SIM (Standard, Micro and Nano). eSIM compatibility can be checked by dialing **`*#06#`**.",
@@ -502,7 +502,7 @@ class SovereignNetOpsRAG:
         if asks("complaint", "receipt", "support", "contact", "branch", "branches", "office", "location",
                 "locations", "store", "hotline", "number", "kandy", "jaffna", "airport", "gampaha") and grounded(
                 "1212", "1717", "branch", "receipt", "hotline", "store", "5777"):
-            ans = "Here are the **SLTMobitel support hotlines, receipt channels and branches**:"
+            ans = "**Support hotlines, receipt channels, and branch locations**:"
             bullets = [
                 "**Hotlines:** **`1212`** (SLT Fixed / Fibre / PEOTV) | **`1717`** (Mobitel Mobile).",
                 "**Payment receipts (include SR number & mobile number):** WhatsApp/Viber **`+94 71 175 5777`**, email **`info@mobitel.lk`**, fax **`+94 11 233 0396`**.",
@@ -513,7 +513,7 @@ class SovereignNetOpsRAG:
         # 4B. Enterprise / SME / Business Solutions (Cloud, SDDC, Cyber Security, Starlink)
         if asks("enterprise", "business", "sme", "wholesale", "starlink", "cloud", "sddc", "cyber") and grounded(
                 "enterprise", "business", "sme", "wholesale", "starlink", "cloud", "sddc", "cyber"):
-            ans = "**SLTMobitel Business & Enterprise Solutions** include:"
+            ans = "**Business & Enterprise Solutions** include:"
             bullets = [
                 "**Enterprise Premium Cloud & SDDC:** High-performance **Software Defined Data Center (SDDC)** cloud with rapid provisioning and **pay-as-you-go** billing.",
                 "**Core Enterprise Portfolio:** Enterprise Connectivity, Cyber Security, Voice & Collaboration, AI Portfolio, Digital & Managed Services, and Starlink Business solutions."
@@ -523,7 +523,7 @@ class SovereignNetOpsRAG:
         # 5. Fixed voice / landphone troubleshooting
         if asks("dial tone", "ringing", "tone volume", "noise", "disturbance", "telephone", "landphone",
                 "landline", "phone wire", "voice") and grounded("dial tone", "ringing", "noise", "telephone", "phone"):
-            ans = "Here are the **fixed voice / landphone troubleshooting** steps:"
+            ans = "**Fixed voice / landphone troubleshooting** steps:"
             bullets = [
                 "**No dial tone, or noise/disturbance on the line:** Check that all telephone cables are tightly connected.",
                 "**Ringing sound very low:** Set the ring-tone volume button on the telephone to **High**.",
@@ -534,7 +534,7 @@ class SovereignNetOpsRAG:
 
         # 6. Wireless extender (WPS)
         if asks("extender", "wps", "repeater", "booster") and grounded("extender", "wps"):
-            ans = "To connect a **wireless extender** to your SLTMobitel router using **WPS**:"
+            ans = "To connect a **wireless extender** using **WPS**:"
             bullets = [
                 "**1.** Plug the wireless extender into a wall outlet.",
                 "**2.** Press the **WPS** button on the router.",
@@ -578,7 +578,7 @@ class SovereignNetOpsRAG:
                     ]
                     return ans, bullets
 
-                ans = "To troubleshoot a **slow SLTMobitel internet connection**, follow these recommended steps:"
+                ans = "To troubleshoot a **slow internet connection**, follow these steps:"
                 bullets = [
                     "**1. Check usage:** See whether your quota is exceeded via the **MySLT App / Portal** (`https://myslt.slt.lk/`).",
                     "**2. Restart the router.**",
@@ -648,7 +648,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
             # Stage: initial "internet / Wi-Fi not working" / how to restart router
-            ans = "To troubleshoot your **SLTMobitel router & Wi-Fi** connection:"
+            ans = "To troubleshoot your **router & Wi-Fi** connection:"
             bullets = [
                 "**1. Device & router power:** Make sure Wi-Fi is turned on on your phone/laptop and the router is powered ON.",
                 "**2. Cables:** Check that the power, Ethernet and telephone/Fibre cables are tightly connected.",
@@ -698,7 +698,7 @@ class SovereignNetOpsRAG:
         kb_endpoint_override: str | None = None
     ) -> dict:
         """
-        Queries the SLTMobitel AWS KnowledgeBase API (/prod/retrieve) and synthesizes
+        Queries the KnowledgeBase API (/prod/retrieve) and synthesizes
         a clear, natural answer — or politely states 'I don't have enough knowledge to answer that'
         if the retrieved chunks do not match the question.
         """
@@ -713,7 +713,7 @@ class SovereignNetOpsRAG:
             )
             chunks = kb_response.get("chunks", [])
         except Exception as exc:
-            kb_error = f"AWS KnowledgeBase API call failed: {exc}"
+            kb_error = f"KnowledgeBase API call failed: {exc}"
             chunks = []
 
         citations = [f"{c['doc_id']} (Score: {c['score']})" for c in chunks]
@@ -723,11 +723,7 @@ class SovereignNetOpsRAG:
         has_relevant_knowledge = self._chunks_are_relevant_to_query(sanitized_query, chunks)
 
         if not chunks or not has_relevant_knowledge:
-            polite_abstention = (
-                "I don't have enough knowledge to answer that specific question. "
-                "Please contact **SLTMobitel Support at 1212** (Fixed/Fibre) or **1717** (Mobile), "
-                "or check the **MySLT App** (`https://myslt.slt.lk/`)."
-            )
+            polite_abstention = "I don't have enough knowledge to answer that question."
             return {
                 "query": sanitized_query,
                 "inference_mode": active_mode,
@@ -735,7 +731,7 @@ class SovereignNetOpsRAG:
                 "answer": polite_abstention,
                 "confidence": "ABSTAINED",
                 "key_points": [],
-                "follow_up_suggestion": "Try asking a different SLTMobitel question or paste a network incident ticket.",
+                "follow_up_suggestion": "",
                 "citations": [],
                 "retrieved_chunks": chunks,
                 "count": len(chunks),
@@ -763,13 +759,10 @@ class SovereignNetOpsRAG:
                         "query": sanitized_query,
                         "inference_mode": engine_label,
                         "has_enough_knowledge": False,
-                        "answer": (
-                            raw_ans if raw_ans else
-                            "I don't have enough knowledge to answer that specific question."
-                        ),
+                        "answer": "I don't have enough knowledge to answer that question.",
                         "confidence": "ABSTAINED",
                         "key_points": [],
-                        "follow_up_suggestion": "Please try another question or contact SLTMobitel 1212.",
+                        "follow_up_suggestion": "",
                         "citations": [],
                         "retrieved_chunks": chunks,
                         "count": len(chunks),
@@ -784,9 +777,7 @@ class SovereignNetOpsRAG:
                     "answer": raw_ans,
                     "confidence": "HIGH",
                     "key_points": [str(kp) for kp in llm_res.get("key_points", []) if str(kp).strip()],
-                    "follow_up_suggestion": str(
-                        llm_res.get("follow_up_suggestion", "Need more help? Reach SLTMobitel via 1212 or the MySLT App.")
-                    ),
+                    "follow_up_suggestion": str(llm_res.get("follow_up_suggestion", "")),
                     "citations": citations,
                     "retrieved_chunks": chunks,
                     "count": len(chunks),
@@ -807,7 +798,7 @@ class SovereignNetOpsRAG:
             "answer": main_paragraph,
             "confidence": "HIGH" if float(top_chunk.get("score", 0.0)) >= 0.60 else "MEDIUM",
             "key_points": bullet_list,
-            "follow_up_suggestion": "You can ask a follow-up question below or check the official SLTMobitel portal (slt.lk).",
+            "follow_up_suggestion": "",
             "citations": citations,
             "retrieved_chunks": chunks,
             "count": len(chunks),
@@ -906,11 +897,7 @@ class SovereignNetOpsRAG:
 
         # If the user asked a general question not covered by the BGP/OSPF/GPON SOPs, abstain cleanly!
         if not self._is_valid_netops_telemetry(sanitized_ticket):
-            abstain_msg = (
-                "I don't have enough knowledge in the SLT Network Operations SOPs to answer that question. "
-                "Our NetOps SOPs only cover **Core BGP Optical Loss (`SLT-NET-SOP-042`)**, "
-                "**OSPF EXSTART MTU Mismatches (`SLT-NET-SOP-043`)**, and **GPON OLT Feeder Fiber Cuts (`SLT-NET-SOP-044`)**."
-            )
+            abstain_msg = "I don't have enough knowledge to answer that question."
             return {
                 "ticket_id": meta["ticket_id"],
                 "affected_node": meta["affected_node"],
@@ -970,7 +957,7 @@ class SovereignNetOpsRAG:
                         "diagnosis_summary": str(
                             llm_res.get(
                                 "diagnosis_summary",
-                                "I don't have enough knowledge in the SLT Network Operations SOPs to answer that question."
+                                "I don't have enough knowledge to answer that question."
                             )
                         ),
                         "recommended_actions": [],

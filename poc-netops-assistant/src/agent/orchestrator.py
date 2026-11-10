@@ -289,7 +289,7 @@ class SLTMobitelUnifiedAgent:
                 "mcp_tool_called": "slt_voice_ivr_respond",
                 "inference_mode": inference_engine,
                 "has_enough_knowledge": True,
-                "headline": "SLTMobitel Assistant",
+                "headline": "AI Assistant",
                 "answer_markdown": reply_text,
                 "spoken_response": spoken_reply,
                 "ssml_response": self.voice_agent.build_ssml(spoken_reply),
@@ -299,7 +299,7 @@ class SLTMobitelUnifiedAgent:
                 "confidence": "HIGH",
                 "escalation_required": False,
                 "escalation_target": "Self-Service Chat",
-                "citations": ["SLTMobitel-Agent-System"],
+                "citations": ["Agent-System"],
                 "retrieved_chunks": [],
                 "sanitized_text": user_input,
                 "redactions_applied": 0,
@@ -309,11 +309,7 @@ class SLTMobitelUnifiedAgent:
                 "trace_steps": ["Handled conversational input."],
                 "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
                 "warnings": [],
-                "suggested_followups": [
-                    "What are the SLTMobitel 4G LTE & PEOTV package prices?",
-                    "What USSD codes are available for #1456#, #888#, and #170#?",
-                    "How do I restart or troubleshoot my router?"
-                ]
+                "suggested_followups": []
             }
 
         # Step 1: Pre-Flight Sanitization via MCP Tool (`slt_sanitize_pii`) ONLY on current user_input
@@ -342,9 +338,8 @@ class SLTMobitelUnifiedAgent:
         if in_guard["blocked"]:
             latency_ms = (time.perf_counter() - t0) * 1000
             blocked_msg = (
-                "⛔ **Sovereign Guardrail Intercept:** Your request was blocked because it triggered a "
-                f"security policy check (`{', '.join(in_guard['flags'])}`). Please submit a valid SLTMobitel "
-                "product question or network incident log."
+                "Your request could not be processed because it triggered a "
+                f"security check (`{', '.join(in_guard['flags'])}`)."
             )
             out_guard = {
                 "passed": True,
@@ -361,7 +356,7 @@ class SLTMobitelUnifiedAgent:
                 "mcp_tool_called": "slt_sanitize_pii",
                 "inference_mode": "SOVEREIGN_GUARDRAIL",
                 "has_enough_knowledge": False,
-                "headline": "Request Blocked by Sovereign Input Guardrail",
+                "headline": "Request Blocked by Input Guardrail",
                 "answer_markdown": blocked_msg,
                 "spoken_response": spoken_blocked,
                 "ssml_response": self.voice_agent.build_ssml(spoken_blocked),
@@ -476,13 +471,13 @@ class SLTMobitelUnifiedAgent:
                     ]
 
             has_knowledge = bool(rep.get("has_enough_knowledge", True))
-            headline = "SLTMobitel Assistant"
+            headline = "AI Assistant"
             answer_md = rep["answer"]
             key_points = rep["key_points"]
             severity = f"KB_{rep['confidence']}"
             confidence = rep["confidence"]
             esc_req = False
-            esc_target = rep.get("follow_up_suggestion", "SLTMobitel Support (1212 / MySLT App)")
+            esc_target = rep.get("follow_up_suggestion", "")
             citations = rep["citations"]
             chunks = rep["retrieved_chunks"]
             engine_used = rep["inference_mode"]
@@ -503,22 +498,7 @@ class SLTMobitelUnifiedAgent:
         )
 
         latency_ms = (time.perf_counter() - t0) * 1000
-
-        if chosen_route in ("NETOPS_INCIDENT", "HYBRID_BOTH"):
-            candidate_followups = [
-                "Show me the read-only CLI verification commands for this router",
-                "Check OSPF EXSTART MTU mismatch SOP steps",
-                "What are the SLTMobitel 4G LTE & PEOTV package prices?"
-            ]
-        else:
-            candidate_followups = [
-                "What are the SLTMobitel 4G LTE & PEOTV package prices?",
-                "What USSD codes are available for #1456#, #888#, and #170#?",
-                "What is the Mobitel APN setting and Credit Limit policy?",
-                "How do I restart or troubleshoot my router?"
-            ]
-        q_norm = user_input.strip().lower()
-        suggested_followups = [q for q in candidate_followups if q.lower() != q_norm][:3]
+        suggested_followups = []
 
         spoken_reply = self.voice_agent.format_for_speech(answer_md, key_points)
 

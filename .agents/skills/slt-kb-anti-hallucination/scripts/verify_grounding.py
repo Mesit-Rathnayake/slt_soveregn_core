@@ -53,11 +53,16 @@ def run_audit() -> int:
         "What is the weather in Tokyo?",
         "Whats the Capital of Sri Lanka",
         "How do I book a flight to Colombo?",
+        "How to make a dhal curry",
     ]
     with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=mock_kb):
         for q in traps:
             res = agent.run_agent(q, route_mode="AUTO", inference_engine="LOCAL_GROUNDED_RULE_ENGINE")
             assert res["has_enough_knowledge"] is False, f"Hallucinated on out-of-domain trap: {q}"
+            ans_lower = res["answer_markdown"].lower()
+            assert "knowledgebase" not in ans_lower and "knowledge base" not in ans_lower, (
+                f"Found robotic 'KnowledgeBase' filler in abstention for: {q}"
+            )
 
         # 2. Verify no ungrounded hardware claims (e.g. 'pinhole', 'pppoe') in router troubleshooting
         r_res = agent.run_agent(
