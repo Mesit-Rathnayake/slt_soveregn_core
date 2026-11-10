@@ -340,7 +340,8 @@ class SovereignNetOpsRAG:
                     "**1. MySLT App / Web Portal (`https://myslt.slt.lk/`):** Navigate to **Internet → Data Remaining** to view your real-time daily/monthly quota. Select *Data Remaining → More → Enable Detailed Reports* for breakdown reports.",
                     "**2. USSD `#170#`:** Dial **`#170#`** on your mobile to view remaining data balances and active add-on volume.",
                     "**3. USSD `#1456#` (or `1456` IVR):** Dial **`#1456#`** to view current data usage, total billed usage, account balance, and credit limit.",
-                    "**4. `#888#` Self-Care Portal:** Dial **`#888#`** → Select **My Package** or **My Activations** to verify your active Pre-Paid or Post-Paid package details."
+                    "**4. SMS Self-Care (Mobitel):** Type **`DB`** and send it via SMS to **`7678`** to receive your remaining data balance.",
+                    "**5. `#888#` Self-Care Portal:** Dial **`#888#`** → Select **My Package** or **My Activations** to verify your active Pre-Paid or Post-Paid package details."
                 ]
                 return ans, bullets
 
