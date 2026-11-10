@@ -296,9 +296,9 @@ class SovereignNetOpsRAG:
         def grounded(*anchors) -> bool:
             return cls._has_any_term(combined_lower, anchors)
 
-        # 0. Complete KnowledgeBase summary (sourced from the reconstructed KB catalog)
+        # 0. Complete summary (sourced from the reconstructed catalog)
         if cls._is_kb_summary_query(query_text):
-            ans = "Here is a complete summary of the topics covered in the **SLTMobitel KnowledgeBase**:"
+            ans = "Here is a complete summary of available SLTMobitel services, packages, and support topics:"
             bullets = [
                 "**1. Broadband packages:** **4G LTE** (Anytime volume packages from `20 GB` Rs. 535 to `400 GB` Rs. 7,990; LTE Unlimited 2/4/8 Mbps; Unlimited LTE Flash 5 & 10) and **Fibre (FTTH)** packages from *Fiber Starter* (Rs. 2,690) to *Ultra Prime* (`1000/500 Mbps`), plus Megaline-to-Fibre migration offers.",
                 "**2. PEOTV & fixed voice:** PEOTV packages from *PEO Bronze* (72 channels, Rs. 860) to *PEO HD Plus* (160 channels, Rs. 3,125), *PEO 4G Elite*, *PEO Mobile* (Rs. 249), and unlimited fixed voice plans (Rs. 747 / Rs. 902 per month).",
@@ -410,7 +410,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
         if asks("document", "documents", "nic", "passport", "new connection") and grounded(
                 "application form", "billing proof", "passport", "driving license", "identity card"):
-            ans = "To get a **new SLTMobitel connection**, the KnowledgeBase lists these required documents:"
+            ans = "To get a **new SLTMobitel connection**, you will need the following documents:"
             bullets = [
                 "**1. Completed application form**",
                 "**2. Identity proof:** National Identity Card (NIC), Driving License, or Passport.",
@@ -420,7 +420,7 @@ class SovereignNetOpsRAG:
 
         # 1C. mCash
         if asks("mcash", "m-cash") and grounded("mcash", "m-cash"):
-            ans = "Here is the **SLTMobitel mCash** information from the KnowledgeBase:"
+            ans = "Here is how to manage **SLTMobitel mCash**:"
             bullets = [
                 "**Remove a saved bank account:** mCash Main Menu → **Top Up Via Bank Account** → select the bank account → tap the **Delete** icon → **Confirm**.",
                 "**mCash USSD:** Dial **`#111#`**."
@@ -513,7 +513,7 @@ class SovereignNetOpsRAG:
         # 4B. Enterprise / SME / Business Solutions (Cloud, SDDC, Cyber Security, Starlink)
         if asks("enterprise", "business", "sme", "wholesale", "starlink", "cloud", "sddc", "cyber") and grounded(
                 "enterprise", "business", "sme", "wholesale", "starlink", "cloud", "sddc", "cyber"):
-            ans = "**SLTMobitel Business & Enterprise Solutions** in the KnowledgeBase include:"
+            ans = "**SLTMobitel Business & Enterprise Solutions** include:"
             bullets = [
                 "**Enterprise Premium Cloud & SDDC:** High-performance **Software Defined Data Center (SDDC)** cloud with rapid provisioning and **pay-as-you-go** billing.",
                 "**Core Enterprise Portfolio:** Enterprise Connectivity, Cyber Security, Voice & Collaboration, AI Portfolio, Digital & Managed Services, and Starlink Business solutions."
@@ -555,7 +555,7 @@ class SovereignNetOpsRAG:
 
             # Stage: already restarted, still failing
             if asks("restarted", "rebooted", "already tried", "did that", "done that", "still slow", "still not working", "already restarted"):
-                ans = "Since you have **already restarted the router** and the problem continues, these are the remaining checks from the KnowledgeBase:"
+                ans = "Since you have **already restarted the router** and the problem continues, here are the next recommended checks:"
                 bullets = [
                     "**1. Check your data quota:** In the **MySLT App** → Internet → Data Remaining, confirm your quota is not exceeded (Unlimited LTE Flash packages drop to `1 Mbps` after the daily `5 GB` / `10 GB`).",
                     "**2. Check the `GPON` LED:** Solid green means the optical link to SLT is working normally. If it is not solid green, the line needs to be checked by SLT.",
@@ -578,7 +578,7 @@ class SovereignNetOpsRAG:
                     ]
                     return ans, bullets
 
-                ans = "To troubleshoot a **slow SLTMobitel internet connection**, the KnowledgeBase recommends:"
+                ans = "To troubleshoot a **slow SLTMobitel internet connection**, follow these recommended steps:"
                 bullets = [
                     "**1. Check usage:** See whether your quota is exceeded via the **MySLT App / Portal** (`https://myslt.slt.lk/`).",
                     "**2. Restart the router.**",
@@ -670,7 +670,7 @@ class SovereignNetOpsRAG:
                         s = f"• {s}"
                     cleaned_steps.append(" ".join(s.split()))
             if cleaned_steps:
-                return "Here is what the SLTMobitel KnowledgeBase says:", cleaned_steps[:6]
+                return "Here are the recommended steps:", cleaned_steps[:6]
 
         lines = [ln.strip(" ,\"'•~") for ln in raw_top.splitlines() if ln.strip(" ,\"'•~")]
         if not lines:
@@ -724,9 +724,9 @@ class SovereignNetOpsRAG:
 
         if not chunks or not has_relevant_knowledge:
             polite_abstention = (
-                "I don't have enough knowledge in the current SLTMobitel KnowledgeBase to answer that specific question. "
-                "Please try asking about topics covered in our knowledge base, or contact **SLTMobitel Support (1212)** "
-                "or the **MySLT App** for direct assistance."
+                "I don't have enough knowledge to answer that specific question. "
+                "Please contact **SLTMobitel Support at 1212** (Fixed/Fibre) or **1717** (Mobile), "
+                "or check the **MySLT App** (`https://myslt.slt.lk/`)."
             )
             return {
                 "query": sanitized_query,
@@ -765,7 +765,7 @@ class SovereignNetOpsRAG:
                         "has_enough_knowledge": False,
                         "answer": (
                             raw_ans if raw_ans else
-                            "I don't have enough knowledge in the SLTMobitel KnowledgeBase to answer that specific question."
+                            "I don't have enough knowledge to answer that specific question."
                         ),
                         "confidence": "ABSTAINED",
                         "key_points": [],

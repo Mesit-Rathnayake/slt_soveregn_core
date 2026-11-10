@@ -466,7 +466,7 @@ class SLTMobitelUnifiedAgent:
                     rep["has_enough_knowledge"] = True
                     rep["answer"] = (
                         "Since you have already checked those initial steps, here are the **remaining verification "
-                        "and support escalation steps** in the SLTMobitel KnowledgeBase:"
+                        "and support escalation steps**:"
                     )
                     rep["key_points"] = [
                         "**1. Verify `WLAN` & `GPON` LEDs:** Ensure `WLAN` is ON (press the **Wi-Fi / WLAN** button if OFF) and `GPON` is **solid green**.",
