@@ -185,7 +185,8 @@ class SLTMobitelUnifiedAgent:
         "apn", "mcash", "roaming", "idd", "branch", "branches", "hotline", "peotv", "fibre",
         "fiber", "ftth", "addon", "addons", "youtube", "whatsapp", "gamer", "lms", "streamer",
         "upahara", "samurdhi", "enterprise", "starlink", "quota", "remaining", "reamaining",
-        "loan", "borrow"
+        "loan", "borrow", "170", "247", "1456", "888", "111", "999", "06",
+        "#170#", "#247#", "#1456#", "#888#", "#111#", "#999#", "*#06#"
     }
 
     @classmethod
@@ -195,19 +196,19 @@ class SLTMobitelUnifiedAgent:
         and NOT a brand-new standalone topic inquiry.
         Prevents bleeding old session topics into new questions!
         """
-        words = re.findall(r"[a-zA-Z]+", user_input.lower())
-        if not words or len(words) > 12:
+        tokens = re.findall(r"[a-z0-9#*]+", user_input.lower())
+        if not tokens or len(tokens) > 12:
             return False
-        # If the user names an explicit new product/catalog topic, treat it as a fresh standalone question
-        if any(w in cls.STANDALONE_TOPIC_TERMS for w in words):
+        # If the user names an explicit new product/catalog topic or USSD code, treat it as a fresh standalone question
+        if any(t in cls.STANDALONE_TOPIC_TERMS for t in tokens):
             return False
-        if any(w in cls.FOLLOWUP_PRONOUNS for w in words):
+        if any(t in cls.FOLLOWUP_PRONOUNS for t in tokens):
             return True
         lower_s = user_input.strip().lower()
         if lower_s.startswith(("and ", "what about", "how about", "also ", "why did")):
             return True
         if prev_route != "NETOPS_INCIDENT":
-            prev_words = set(re.findall(r"[a-zA-Z]+", prev_text.lower()))
+            prev_words = set(re.findall(r"[a-z0-9#*]+", prev_text.lower()))
             prev_was_troubleshooting = bool(prev_words.intersection({
                 "router", "internet", "wifi", "wlan", "slow", "slower", "slowly", "speed",
                 "connection", "connectivity", "socket", "outlet", "restarted", "reboot",
@@ -217,7 +218,7 @@ class SLTMobitelUnifiedAgent:
             if prev_was_troubleshooting:
                 if lower_s.startswith(("ok now", "now ", "still ", "already ", "but ")):
                     return True
-                if any(w in cls.TROUBLESHOOT_FOLLOWUP_TERMS for w in words):
+                if any(w in cls.TROUBLESHOOT_FOLLOWUP_TERMS for w in tokens):
                     return True
         return False
 

@@ -212,6 +212,78 @@ def test_mobitel_data_loan_inquiry():
         assert "7678" in kps
 
 
+def test_credit_loan_and_ussd_code_inquiries():
+    """
+    Verifies that credit loan inquiries correctly distinguish #247# Instant Credit Loan
+    from #170# Data Loan, and that queries like 'What does #247# does' and 'What does #170# does'
+    provide specific USSD portal descriptions rather than abstaining.
+    """
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    credit_loan_kb = {
+        "query": "How to take a credit loan",
+        "chunks": [
+            {
+                "doc_id": "KB-CHUNK-CREDIT-LOAN",
+                "doc_title": "SLTMobitel Credit Loan",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.88)",
+                "content": (
+                    "The eligibility for the available loan options depends on how long you have been a subscriber to the Mobitel network. "
+                    "25.00 #247#25# 1.75 + Taxes 5 days Above 3 months "
+                    "50.00 #247#50# 3.50 + Taxes 7 days Above 3 months "
+                    "100.00 #247#100# 7.00 + Taxes 7 days Above 6 months "
+                    "Outgoing calls (local) Outgoing SMS (local) Internet browsing Value-Added Services"
+                ),
+                "score": 0.88,
+                "similarity_score": 0.88
+            }
+        ],
+        "count": 1
+    }
+
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=credit_loan_kb):
+        # 1. How to take a credit loan
+        res_credit = agent.run_agent("How to take a credit loan", route_mode="AUTO", inference_engine="LOCAL_GROUNDED_RULE_ENGINE")
+        assert res_credit["has_enough_knowledge"] is True
+        assert "#247#" in res_credit["answer_markdown"]
+        assert "credit loan" in res_credit["answer_markdown"].lower()
+        kps_credit = " ".join(res_credit["key_points"])
+        assert "#247#25#" in kps_credit
+        assert "#247#100#" in kps_credit
+
+        # 2. What does #247# does
+        res_247 = agent.run_agent("What does #247# does", route_mode="AUTO", inference_engine="LOCAL_GROUNDED_RULE_ENGINE")
+        assert res_247["has_enough_knowledge"] is True
+        assert "#247#" in res_247["answer_markdown"]
+        assert "credit loan" in res_247["answer_markdown"].lower()
+
+    ussd_170_kb = {
+        "query": "USSD #170# data balance loan",
+        "chunks": [
+            {
+                "doc_id": "KB-CHUNK-170",
+                "doc_title": "SLTMobitel #170#",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.88)",
+                "content": "To quickly activate a loan that suits your needs, dial #170# on your mobile phone and choose the data loan option. Data Loan Entitled Bundle Rs. 36 296MB Rs. 58 512MB.",
+                "score": 0.88,
+                "similarity_score": 0.88
+            }
+        ],
+        "count": 1
+    }
+
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=ussd_170_kb):
+        # 3. What does #170# does
+        res_170 = agent.run_agent("What does #170# does", route_mode="AUTO", inference_engine="LOCAL_GROUNDED_RULE_ENGINE")
+        assert res_170["has_enough_knowledge"] is True
+        assert "#170#" in res_170["answer_markdown"]
+        kps_170 = " ".join(res_170["key_points"])
+        assert "Remaining Data Balance" in kps_170 or "#170#" in kps_170
+
+
 def test_guardrails_block_prompt_injection_and_score_evals():
     manuals_dir = BASE_DIR / "data" / "approved_manuals"
     agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)

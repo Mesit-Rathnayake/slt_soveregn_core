@@ -82,6 +82,33 @@ class SovereignNetOpsRAG:
             results.append(c_copy)
         return results
 
+    @classmethod
+    def _expand_kb_search_query(cls, query_text: str) -> str:
+        """
+        Enriches short USSD code or loan queries with semantic context so the AWS KB
+        vector search retrieves the matching USSD/loan document chunks.
+        """
+        current_q = re.split(r"\s*\(context:", query_text, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        q_lower = current_q.lower()
+        if re.search(
+            r"(?:#247#|\b247\b|\bcredit\s+loan\b|\binstant\s+loan\b|\bsmart\s+loan\b|\bcash\s+loan\b|\bvoice\s+loan\b)",
+            q_lower,
+        ):
+            return "How to take a credit loan"
+        if re.search(r"(?:#170#|\b170\b)", q_lower):
+            return "USSD #170# data balance loan"
+        if re.search(r"(?:#1456#|\b1456\b)", q_lower):
+            return "USSD #1456# billing usage account balance credit limit"
+        if re.search(r"(?:#888#|\b888\b)", q_lower):
+            return "USSD #888# self-care portal my package my activations"
+        if re.search(r"(?:#111#|\b111\b)", q_lower):
+            return "USSD #111# mCash top up bank account"
+        if re.search(r"(?:#999#|\b999\b)", q_lower):
+            return "USSD #999# international roaming IDD rates"
+        if re.search(r"(?:\*#06#|\b06#\b)", q_lower):
+            return "*#06# eSIM EID compatibility check"
+        return query_text
+
     def retrieve_from_aws_kb(
         self,
         query_text: str,
@@ -90,8 +117,9 @@ class SovereignNetOpsRAG:
         kb_endpoint_override: str | None = None
     ) -> dict:
         """Retrieves relevant chunks from the SLTMobitel AWS KnowledgeBase HTTP API."""
+        effective_query = self._expand_kb_search_query(query_text)
         return self.aws_kb_client.retrieve(
-            query=query_text,
+            query=effective_query,
             top_k=top_k,
             secret_override=kb_secret_override,
             endpoint_override=kb_endpoint_override
@@ -251,16 +279,38 @@ class SovereignNetOpsRAG:
             float(c.get("rerank_score", c.get("score", 0.0)))
             for c in chunks
         )
-        raw_words = [w for w in re.findall(r"[a-zA-Z0-9]{2,}", query_text.lower()) if w not in cls.STOPWORDS and len(w) >= 3]
+        raw_words = [
+            w for w in re.findall(r"[a-zA-Z0-9]{2,}", query_text.lower())
+            if w not in cls.STOPWORDS and (len(w) >= 3 or w.isdigit())
+        ]
         query_keywords = {cls._stem_token(w) for w in raw_words}
 
         if not query_keywords:
             return False
 
         combined_content = " ".join(c.get("content", "") + " " + c.get("raw_content", "") for c in chunks).lower()
-        content_words = {cls._stem_token(w) for w in re.findall(r"[a-zA-Z0-9]{3,}", combined_content)}
+        content_words = {
+            cls._stem_token(w) for w in re.findall(r"[a-zA-Z0-9]{2,}", combined_content)
+            if len(w) >= 3 or w.isdigit()
+        }
 
         overlap = query_keywords.intersection(content_words)
+
+        # USSD and specialized keyword synonyms mapping
+        if cls._has_any_term(current_q, ("111", "#111#")) and cls._has_any_term(combined_content, ("mcash", "m-cash", "bank account", "wallet")):
+            return True
+        if cls._has_any_term(current_q, ("999", "#999#")) and cls._has_any_term(combined_content, ("roaming", "idd", "country code", "rate", "minute")):
+            return True
+        if cls._has_any_term(current_q, ("170", "#170#")) and cls._has_any_term(combined_content, ("loan", "data", "bundle", "validity", "quota")):
+            return True
+        if cls._has_any_term(current_q, ("247", "#247#")) and cls._has_any_term(combined_content, ("loan", "tenure", "outgoing", "subscriber")):
+            return True
+        if cls._has_any_term(current_q, ("1456", "#1456#")) and cls._has_any_term(combined_content, ("bill", "usage", "credit limit", "balance")):
+            return True
+        if cls._has_any_term(current_q, ("888", "#888#")) and cls._has_any_term(combined_content, ("package", "activation", "puk", "prepaid", "postpaid")):
+            return True
+        if cls._has_any_term(current_q, ("06#", "*#06#", "eid")) and cls._has_any_term(combined_content, ("esim", "eid")):
+            return True
 
         if len(overlap) == 0:
             return False
@@ -323,6 +373,62 @@ class SovereignNetOpsRAG:
             asks("check", "how to check", "view", "know", "see") and asks("data", "quota", "usage", "balance", "package", "plan")
         )
 
+        # 1AA. Instant Credit Loan (#247#) & Data Loan (#170#)
+        if asks(
+            "loan", "data loan", "credit loan", "instant loan", "smart loan", "cash loan", "voice loan",
+            "borrow", "borrow data", "emergency data", "247"
+        ) and grounded(
+            "loan", "247", "170", "7678", "recharge", "repay", "data loan", "recovery", "tenure", "outgoing"
+        ):
+            is_credit_loan = asks("247", "credit loan", "instant loan", "smart loan", "cash loan", "voice loan") or (
+                grounded("247", "outgoing") and not asks("data loan", "borrow data", "emergency data", "170")
+            )
+            if is_credit_loan:
+                if asks("247") and not asks("how to take", "how to get", "get", "take", "activate", "obtain", "borrow", "loan"):
+                    ans = "**`#247#`** is the **Instant Credit Loan** USSD code (usable for local outgoing calls, local SMS, internet browsing, and Value-Added Services):"
+                else:
+                    ans = "To take an **Instant Credit Loan (`#247#`)** (usable for local calls, SMS, internet browsing, and VAS), dial the USSD code for your preferred amount:"
+                bullets = [
+                    "**Rs. 25 Loan:** Dial **`#247#25#`** (Service charge: Rs. 1.75 + taxes | Validity: 5 days | Eligibility: > 3 months on network).",
+                    "**Rs. 40 Loan:** Dial **`#247#`** on **Tue / Wed / Thu** (Service charge: Rs. 3.00 + taxes | Validity: 7 days | Eligibility: > 3 months).",
+                    "**Rs. 50 Loan:** Dial **`#247#50#`** (Service charge: Rs. 3.50 + taxes | Validity: 7 days | Eligibility: > 3 months).",
+                    "**Rs. 75 Loan:** Dial **`#247#75#`** (Service charge: Rs. 5.25 + taxes | Validity: 7 days | Eligibility: > 3 months).",
+                    "**Rs. 90 Loan:** Dial **`#247#`** on **Fri / Sat / Sun / Mon** (Service charge: Rs. 6.00 + taxes | Validity: 7 days | Eligibility: > 3 months).",
+                    "**Rs. 100 Loan:** Dial **`#247#100#`** (Service charge: Rs. 7.00 + taxes | Validity: 7 days | Eligibility: > 6 months on network).",
+                    "**Repayment:** Automatically recovered (full or partial) on your next mobile recharge."
+                ]
+                return ans, bullets
+
+            # If asking how to check data loan balance specifically
+            if asks("balance", "remaining", "check", "available") and not asks("get", "activate", "how to get", "obtain", "repay", "pay"):
+                ans = "To check your **Data Loan balance**:"
+                bullets = [
+                    "**1. SMS Self-Care:** Type **`DB`** and send it via SMS to **`7678`**.",
+                    "**2. USSD:** Dial **`#170#`** on your mobile."
+                ]
+                return ans, bullets
+
+            # If asking how to repay a data loan
+            if asks("repay", "re-pay", "recover", "recovery", "settle", "pay back"):
+                ans = "How **Data Loan repayment** works:"
+                bullets = [
+                    "**Automatic recovery upon recharge:** The loan amount + service charge is automatically recovered when you perform a normal recharge or a voice/data package recharge.",
+                    "**Full recovery:** If your recharge amount is sufficient, the total loan and service fee are deducted entirely.",
+                    "**Partial recovery:** If your recharge amount is insufficient, a partial deduction is made, and the remaining balance is recovered on your next recharge."
+                ]
+                return ans, bullets
+
+            # Default: How to get / activate a data loan (#170#)
+            ans = "To get a **Data Loan**, follow these steps on your phone:"
+            bullets = [
+                "**Step 1:** Dial **`#170#`** on your phone.",
+                "**Step 2:** Select **Option 8 (“Data Loan”)**.",
+                "**Step 3:** Select your applicable loan tier (**Option 1, 2, or 3**), or dial directly: **`#170#36#`** (Rs. 36 — `296 MB`, 3 days), **`#170#58#`** (Rs. 58 — `512 MB`, 7 days), **`#170#118#`** (Rs. 118 — `1.1 GB`, 14 days), or **`#170#159#`** (Rs. 159 — `1.5 GB`, 14 days).",
+                "**Balance check:** SMS **`DB`** to **`7678`** or dial **`#170#`**.",
+                "**Repayment:** Automatically deducted (full or partial) on your next mobile recharge."
+            ]
+            return ans, bullets
+
         # 1A. Data quota, remaining data, balance & active packages (#170#, MySLT App, #1456#, #888#)
         if (
             is_quota_or_balance_intent
@@ -357,46 +463,44 @@ class SovereignNetOpsRAG:
                 ]
                 return ans, bullets
 
+            # Specific #170# USSD inquiry (e.g. "What does #170# does")
+            if asks("170") and not asks("1456", "888"):
+                ans = "**`#170#`** is the **Mobile Data & Self-Care USSD portal** (used alongside the **MySLT App**):"
+                bullets = [
+                    "**1. Check Remaining Data Balance:** Dial **`#170#`** to view remaining data quota and active bundle balances.",
+                    "**2. Activate a Data Loan (`#170#` → Option 8):** Borrow emergency data bundles (`#170#36#` for `296 MB` / Rs. 36, `#170#58#` for `512 MB` / Rs. 58, `#170#118#` for `1.1 GB` / Rs. 118, `#170#159#` for `1.5 GB` / Rs. 159).",
+                    "**3. Data Packages & Add-ons:** Activate or manage mobile data plans and Extra GB add-ons."
+                ]
+                return ans, bullets
+
+            # Specific #1456# USSD inquiry
+            if asks("1456") and not asks("170", "888"):
+                ans = "**`#1456#`** (and `1456` IVR) is the **Billing & Usage Information USSD portal**:"
+                bullets = [
+                    "**Usage & Balance:** Check current usage, total billed usage, and real-time account balance.",
+                    "**Bill Details:** View last month's bill, billed date, billing period, and last payment details.",
+                    "**Credit Limit:** Check your active credit limit (automatic SMS alert sent at 75% usage)."
+                ]
+                return ans, bullets
+
+            # Specific #888# USSD inquiry
+            if asks("888") and not asks("1456", "170"):
+                ans = "**`#888#`** is the **Self-Care Information USSD portal** for managing packages and SIM services:"
+                bullets = [
+                    "**My Package & My Activations:** Check active Pre-Paid/Post-Paid packages and activate or deactivate plans.",
+                    "**PUK Codes:** Retrieve PUK codes for locked SIM cards.",
+                    "**Supported Plans:** Post-Paid plans (*Samurdhi, New Upahara, Meth, Garusaru, Media, Upahara, Kalaguna, Liyasara, ACTIVF, SRIL, VAL50, FX190/390/790, DoubleM*) and Mobile Broadband data plans."
+                ]
+                return ans, bullets
+
             # USSD / balance / billing general
             ans = "You can check your **data and bill balance** using the **MySLT App** or these USSD codes:"
             bullets = [
                 "**`#1456#` (or `1456` IVR):** Current usage, account balance, last month bill, total billed usage, last payment, billed date, billing period and credit limit.",
                 "**`#888#` Self-Care Portal:** My Package, My Activations, Pre-Paid/Post-Paid plans and PUK codes.",
                 "**`#170#` / MySLT App:** MySLT App → Internet → Data Remaining (`https://myslt.slt.lk/`); enable detailed reports via *Data Remaining → More → Enable Detailed Reports*.",
+                "**`#247#`:** Instant credit loan for calls, SMS, data, and VAS.",
                 "**Other codes:** `#999#` (roaming) | `#111#` (mCash) | `*#06#` (eSIM EID check)."
-            ]
-            return ans, bullets
-
-        # 1AA. Data Loan Facility (#170#)
-        if asks("loan", "data loan", "borrow", "borrow data", "emergency data") and grounded(
-                "loan", "170", "7678", "recharge", "repay", "data loan", "recovery"):
-            # If asking how to check data loan balance specifically
-            if asks("balance", "remaining", "check", "available") and not asks("get", "activate", "how to get", "obtain", "repay", "pay"):
-                ans = "To check your **Data Loan balance**:"
-                bullets = [
-                    "**1. SMS Self-Care:** Type **`DB`** and send it via SMS to **`7678`**.",
-                    "**2. USSD:** Dial **`#170#`** on your mobile."
-                ]
-                return ans, bullets
-
-            # If asking how to repay a data loan
-            if asks("repay", "re-pay", "recover", "recovery", "settle", "pay back"):
-                ans = "How **Data Loan repayment** works:"
-                bullets = [
-                    "**Automatic recovery upon recharge:** The loan amount + service charge is automatically recovered when you perform a normal recharge or a voice/data package recharge.",
-                    "**Full recovery:** If your recharge amount is sufficient, the total loan and service fee are deducted entirely.",
-                    "**Partial recovery:** If your recharge amount is insufficient, a partial deduction is made, and the remaining balance is recovered on your next recharge."
-                ]
-                return ans, bullets
-
-            # Default: How to get / activate a data loan
-            ans = "To get a **Data Loan**, follow these steps on your phone:"
-            bullets = [
-                "**Step 1:** Dial **`#170#`** on your phone.",
-                "**Step 2:** Select **Option 8 (“Data Loan”)**.",
-                "**Step 3:** Select your applicable loan tier (**Option 1, 2, or 3**).",
-                "**Balance check:** SMS **`DB`** to **`7678`** or dial **`#170#`**.",
-                "**Repayment:** Automatically deducted (full or partial) on your next mobile recharge."
             ]
             return ans, bullets
 
@@ -418,12 +522,21 @@ class SovereignNetOpsRAG:
             ]
             return ans, bullets
 
-        # 1C. mCash
-        if asks("mcash", "m-cash") and grounded("mcash", "m-cash"):
-            ans = "How to manage **mCash**:"
+        # 1C. mCash (#111#)
+        if asks("mcash", "m-cash", "111") and grounded("mcash", "m-cash", "111"):
+            ans = "**mCash (`#111#`)** mobile money & account management:"
             bullets = [
-                "**Remove a saved bank account:** mCash Main Menu → **Top Up Via Bank Account** → select the bank account → tap the **Delete** icon → **Confirm**.",
-                "**mCash USSD:** Dial **`#111#`**."
+                "**mCash USSD:** Dial **`#111#`** on your phone.",
+                "**Remove a saved bank account:** mCash Main Menu → **Top Up Via Bank Account** → select the bank account → tap the **Delete** icon → **Confirm**."
+            ]
+            return ans, bullets
+
+        # 1CC. International Roaming & IDD (#999#)
+        if asks("roaming", "idd", "999") and grounded("roaming", "idd", "country code", "minute", "rate", "turks", "kitts", "antigua"):
+            ans = "**`#999#`** is the **International Roaming & IDD** USSD portal:"
+            bullets = [
+                "**Roaming USSD:** Dial **`#999#`** on your mobile to activate or manage International Roaming services and data plans while traveling.",
+                "**Rates & Details:** Visit `https://sltmobitel.lk/personal/idd-and-roaming` for destination-specific IDD and roaming call/data rates."
             ]
             return ans, bullets
 
