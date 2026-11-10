@@ -184,7 +184,7 @@ class SLTMobitelUnifiedAgent:
         "package", "packages", "price", "prices", "ussd", "balance", "bill", "billing", "esim",
         "apn", "mcash", "roaming", "idd", "branch", "branches", "hotline", "peotv", "fibre",
         "fiber", "ftth", "addon", "addons", "youtube", "whatsapp", "gamer", "lms", "streamer",
-        "upahara", "samurdhi", "enterprise", "starlink"
+        "upahara", "samurdhi", "enterprise", "starlink", "quota", "remaining", "reamaining"
     }
 
     @classmethod

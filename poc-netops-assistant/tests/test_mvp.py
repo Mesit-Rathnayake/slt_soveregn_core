@@ -118,6 +118,50 @@ def test_rag_answer_kb_question_direct_synthesis():
         assert "SLT-AWS-KB-01 (Score: 0.89)" in report["citations"]
 
 
+def test_check_remaining_data_quota_inquiry():
+    """
+    Verifies that inquiries about checking remaining data quota (even with common typos like 'reamaining')
+    provide the MySLT App / #170# / #1456# / #888# self-care channels, and NEVER accidentally dump
+    broadband package sales prices.
+    """
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    package_kb_return = {
+        "query": "How to check the reamaining data quota of my active package",
+        "chunks": [
+            {
+                "doc_id": "SLT-AWS-KB-02",
+                "doc_title": "SLTMobitel Broadband & Packages",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.86)",
+                "content": "SLTMobitel 4G LTE Home Broadband packages Anytime 20GB Rs 535, LTE Unlimited, Fibre FTTH broadband.",
+                "score": 0.86,
+                "similarity_score": 0.86
+            }
+        ],
+        "count": 1
+    }
+
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=package_kb_return):
+        res = agent.run_agent(
+            "How to check the reamaining data quota of my active package",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE"
+        )
+        assert res["has_enough_knowledge"] is True
+        assert "remaining data quota" in res["answer_markdown"].lower()
+        # Must not dump broadband package sales catalog
+        assert "anytime (volume):" not in res["answer_markdown"].lower()
+        assert "rs. 535" not in res["answer_markdown"].lower()
+        # Must list self-care channels
+        key_points_joined = " ".join(res["key_points"])
+        assert "MySLT App" in key_points_joined
+        assert "#170#" in key_points_joined
+        assert "#1456#" in key_points_joined
+        assert "#888#" in key_points_joined
+
+
 def test_guardrails_block_prompt_injection_and_score_evals():
     manuals_dir = BASE_DIR / "data" / "approved_manuals"
     agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)

@@ -159,6 +159,14 @@ class SovereignNetOpsRAG:
             return "slow"
         if w in ("turned", "powered", "switched"):
             return "power"
+        if w in ("remaining", "reamaining", "remainig", "remains", "remain"):
+            return "remain"
+        if w in ("quota", "quotas"):
+            return "quota"
+        if w in ("balance", "balances"):
+            return "balanc"
+        if w in ("usage", "usages"):
+            return "usage"
         if w.startswith("activ"):
             return "activ"
         if w.startswith("packag"):
@@ -173,20 +181,23 @@ class SovereignNetOpsRAG:
             return w[:-1]
         return w
 
-    @staticmethod
-    def _has_any_term(text: str, terms) -> bool:
+    @classmethod
+    def _has_any_term(cls, text: str, terms) -> bool:
         """
         Word-boundary aware term matcher so short tokens like 'led', 'sim', 'peo', 'idd', 'vas', 'low'
         never match inside unrelated words like 'knowledge', 'simple', 'people', 'middle', 'follow'.
+        Also applies stem-normalization so plurals and inflections match cleanly.
         """
         t_lower = text.lower()
-        word_set = set(re.findall(r"[a-z0-9]+", t_lower))
+        words = re.findall(r"[a-z0-9]+", t_lower)
+        word_set = set(words)
+        stemmed_set = {cls._stem_token(w) for w in words}
         for term in terms:
             term_l = term.lower().strip()
             if not term_l:
                 continue
             if " " not in term_l and term_l.isalnum():
-                if term_l in word_set:
+                if term_l in word_set or cls._stem_token(term_l) in stemmed_set:
                     return True
             else:
                 if re.search(r"(?<![a-z0-9])" + re.escape(term_l) + r"(?![a-z0-9])", t_lower):
@@ -304,16 +315,54 @@ class SovereignNetOpsRAG:
             "on but", "on bot", "turned on", "powered on", "switched on", "is on"
         )
 
-        # 1A. Active packages (#888#)
-        if asks("active", "activated", "activation", "activations", "my package", "current package",
-                "upahara", "samurdhi", "garusaru", "kalaguna", "liyasara") and grounded(
-                "888", "my package", "activations", "upahara", "samurdhi", "1456", "170"):
-            ans = "You can check your **active SLTMobitel packages** using these self-care channels:"
+        is_quota_or_balance_intent = asks(
+            "quota", "balance", "usage", "remaining", "reamaining", "remainig", "remains",
+            "how to check", "check data", "check my", "data remaining", "data quota",
+            "how much data", "data left", "check balance", "bill balance"
+        ) or (
+            asks("check", "how to check", "view", "know", "see") and asks("data", "quota", "usage", "balance", "package", "plan")
+        )
+
+        # 1A. Data quota, remaining data, balance & active packages (#170#, MySLT App, #1456#, #888#)
+        if (
+            is_quota_or_balance_intent
+            or asks("balance", "ussd", "code", "codes", "bill", "billing", "1456", "888", "170", "myslt", "usage",
+                    "active", "activated", "activation", "activations", "my package", "current package",
+                    "upahara", "samurdhi", "garusaru", "kalaguna", "liyasara")
+        ) and grounded(
+            "170", "1456", "888", "myslt", "usage", "balance", "data", "quota", "package", "bill", "portal", "internet"
+        ):
+            # Check data quota / remaining data specifically
+            if asks("quota", "remaining", "reamaining", "remainig", "remains", "data remaining", "data quota",
+                    "how much data", "data left", "check data") or (asks("check", "view", "how to check") and asks("quota", "data")):
+                ans = "To check the **remaining data quota and balance** of your SLTMobitel package, use the **MySLT App** or these self-care channels:"
+                bullets = [
+                    "**1. MySLT App / Web Portal (`https://myslt.slt.lk/`):** Navigate to **Internet → Data Remaining** to view your real-time daily/monthly quota. Select *Data Remaining → More → Enable Detailed Reports* for breakdown reports.",
+                    "**2. USSD `#170#`:** Dial **`#170#`** on your mobile to view remaining data balances and active add-on volume.",
+                    "**3. USSD `#1456#` (or `1456` IVR):** Dial **`#1456#`** to view current data usage, total billed usage, account balance, and credit limit.",
+                    "**4. `#888#` Self-Care Portal:** Dial **`#888#`** → Select **My Package** or **My Activations** to verify your active Pre-Paid or Post-Paid package details."
+                ]
+                return ans, bullets
+
+            # Check active packages specifically
+            if asks("active", "activated", "activation", "activations", "my package", "current package",
+                    "upahara", "samurdhi", "garusaru", "kalaguna", "liyasara"):
+                ans = "You can check your **active SLTMobitel packages** using these self-care channels:"
+                bullets = [
+                    "**`#888#` Self-Care Portal:** Select **My Package** or **My Activations** to see active Pre-Paid/Post-Paid packages, activate/deactivate plans, and check PUK codes.",
+                    "**Data remaining (`#170#` / MySLT App):** MySLT App → Internet → Data Remaining (`https://myslt.slt.lk/`).",
+                    "**Billing & usage (`#1456#` or `1456` IVR):** Current usage, account balance, last month bill and credit limit.",
+                    "**Post-Paid plans listed under `#888#`:** Samurdhi, New Upahara, Meth, Garusaru, Media, Upahara, Kalaguna, Liyasara, ACTIVF, SRIL, VAL50, FX190/390/790, DoubleM."
+                ]
+                return ans, bullets
+
+            # USSD / balance / billing general
+            ans = "You can check your **SLTMobitel data and bill balance** using the **MySLT App** or these USSD codes:"
             bullets = [
-                "**`#888#` Self-Care Portal:** Select **My Package** or **My Activations** to see active Pre-Paid/Post-Paid packages, activate/deactivate plans, and check PUK codes.",
-                "**Data remaining (`#170#` / MySLT App):** MySLT App → Internet → Data Remaining (`https://myslt.slt.lk/`).",
-                "**Billing & usage (`#1456#` or `1456` IVR):** Current usage, account balance, last month bill and credit limit.",
-                "**Post-Paid plans listed under `#888#`:** Samurdhi, New Upahara, Meth, Garusaru, Media, Upahara, Kalaguna, Liyasara, ACTIVF, SRIL, VAL50, FX190/390/790, DoubleM."
+                "**`#1456#` (or `1456` IVR):** Current usage, account balance, last month bill, total billed usage, last payment, billed date, billing period and credit limit.",
+                "**`#888#` Self-Care Portal:** My Package, My Activations, Pre-Paid/Post-Paid plans and PUK codes.",
+                "**`#170#` / MySLT App:** MySLT App → Internet → Data Remaining (`https://myslt.slt.lk/`); enable detailed reports via *Data Remaining → More → Enable Detailed Reports*.",
+                "**Other codes:** `#999#` (roaming) | `#111#` (mCash) | `*#06#` (eSIM EID check)."
             ]
             return ans, bullets
 
@@ -357,20 +406,8 @@ class SovereignNetOpsRAG:
             ]
             return ans, bullets
 
-        # 1E. USSD / balance / billing
-        if asks("balance", "ussd", "code", "codes", "bill", "billing", "1456", "888", "170", "myslt", "usage") and grounded(
-                "balance", "1456", "888", "170", "myslt", "usage", "bill", "billing", "ussd"):
-            ans = "You can check your **SLTMobitel data and bill balance** using the **MySLT App** or these USSD codes:"
-            bullets = [
-                "**`#1456#` (or `1456` IVR):** Current usage, account balance, last month bill, total billed usage, last payment, billed date, billing period and credit limit.",
-                "**`#888#` Self-Care Portal:** My Package, My Activations, Pre-Paid/Post-Paid plans and PUK codes.",
-                "**`#170#` / MySLT App:** MySLT App → Internet → Data Remaining (`https://myslt.slt.lk/`); enable detailed reports via *Data Remaining → More → Enable Detailed Reports*.",
-                "**Other codes:** `#999#` (roaming) | `#111#` (mCash) | `*#06#` (eSIM EID check)."
-            ]
-            return ans, bullets
-
         # 2A. Fibre packages
-        if not is_troubleshoot_intent and asks("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo") and grounded(
+        if not is_troubleshoot_intent and not is_quota_or_balance_intent and asks("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo") and grounded(
                 "fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo"):
             ans = "Here are the **SLTMobitel Fibre (FTTH)** packages (`100 Mbps` to `1 Gbps`):"
             bullets = [
@@ -382,7 +419,7 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         # 2B. PEOTV packages
-        if not is_troubleshoot_intent and asks("peotv", "peo", "channel", "channels", "television", "tv",
+        if not is_troubleshoot_intent and not is_quota_or_balance_intent and asks("peotv", "peo", "channel", "channels", "television", "tv",
                                                "uthayam", "titanium", "platinum", "silver", "bronze", "gold") and grounded(
                 "peo", "peotv", "channel", "channels"):
             if not asks("lte", "4g", "broadband"):
@@ -396,7 +433,7 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
         # 2C. 4G LTE / general packages
-        if not is_troubleshoot_intent and asks("package", "packages", "price", "prices", "lte", "4g", "broadband",
+        if not is_troubleshoot_intent and not is_quota_or_balance_intent and asks("package", "packages", "price", "prices", "lte", "4g", "broadband",
                                                "flash", "hbb", "plan", "plans", "unlimited", "anytime", "volte") and grounded(
                 "lte", "4g", "hbb", "anytime", "flash", "unlimited", "package", "packages", "rs", "peo", "peotv"):
             ans = "Here are the **SLTMobitel 4G LTE Home Broadband, Unlimited Flash, Fibre, and PEOTV** packages:"
