@@ -176,7 +176,7 @@ audit_log_path = BASE_DIR / "data" / "audit_trail.jsonl"
 
 
 @st.cache_resource
-def get_agent_and_governance(_version: str = "v7.8"):
+def get_agent_and_governance(_version: str = "v7.9"):
     agent_inst = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
     gov_inst = SovereignGovernanceManager(audit_log_path=audit_log_path)
     return agent_inst, gov_inst

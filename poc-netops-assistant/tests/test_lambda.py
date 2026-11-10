@@ -204,3 +204,4 @@ def test_lambda_prompt_injection_guardrail_intercept():
     assert body["success"] is True
     assert body["intent_route"] == "GUARDRAIL_BLOCKED"
     assert body["has_enough_knowledge"] is False
+

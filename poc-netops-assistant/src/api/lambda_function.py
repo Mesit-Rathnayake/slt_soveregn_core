@@ -155,34 +155,32 @@ def lambda_handler(event: dict, context=None) -> dict:
         })
 
     route_mode = str(body.get("route_mode", "AUTO"))
-    inference_engine = str(body.get("inference_engine", "AWS_BEDROCK"))
-    top_k = int(body.get("top_k", 3))
+    if route_mode not in ("AUTO", "AWS_CLOUD_KB", "NETOPS_INCIDENT", "HYBRID_BOTH"):
+        route_mode = "AUTO"
+    inference_engine = str(body.get("inference_engine", os.getenv("AI_INFERENCE_MODE", "AWS_BEDROCK")))
+    try:
+        top_k = max(1, min(int(body.get("top_k", 3)), 5))
+    except (TypeError, ValueError):
+        return _build_response(400, {"error": "'top_k' must be an integer between 1 and 5."})
     conversation_history = body.get("conversation_history") or []
+    if not isinstance(conversation_history, list):
+        conversation_history = []
+    conversation_history = conversation_history[-10:]
     active_role = str(body.get("role", "Tier-1 NOC / Support Agent"))
 
-    # Optional overrides
+    # Only the model choice may be selected by the caller. Credentials (AWS keys, Gemini key,
+    # KB secret) and the KB endpoint are server-side configuration and are NEVER read from
+    # the request body — otherwise any caller could redirect the server's x-auth-secret.
     bedrock_model = body.get("bedrock_model")
-    gemini_key = body.get("gemini_api_key")
-    aws_region = body.get("aws_region")
-    aws_ak = body.get("aws_access_key_id")
-    aws_sk = body.get("aws_secret_access_key")
-    kb_secret = body.get("kb_secret_override")
-    kb_endpoint = body.get("kb_endpoint_override")
 
     try:
         turn_res = agent.run_agent(
-            user_input=user_input.strip(),
+            user_input=user_input.strip()[:4000],
             route_mode=route_mode,
             inference_engine=inference_engine,
             top_k=top_k,
             conversation_history=conversation_history,
-            gemini_api_key=gemini_key,
-            bedrock_model=bedrock_model,
-            aws_region=aws_region,
-            aws_access_key_id=aws_ak,
-            aws_secret_access_key=aws_sk,
-            kb_secret_override=kb_secret,
-            kb_endpoint_override=kb_endpoint
+            bedrock_model=bedrock_model
         )
 
         governance.log_event(
@@ -225,10 +223,10 @@ def lambda_handler(event: dict, context=None) -> dict:
             "latency_ms": total_latency_ms
         })
     except Exception as exc:
+        print(f"[lambda_handler] agent execution failed: {type(exc).__name__}: {exc}")
         return _build_response(500, {
             "success": False,
-            "error": "Internal Server Error during AI agent execution",
-            "details": str(exc)
+            "error": "Internal Server Error during AI agent execution"
         })
 
 

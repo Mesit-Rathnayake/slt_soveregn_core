@@ -1,10 +1,10 @@
 import base64
 import hashlib
-import json
 import os
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -23,14 +23,17 @@ def _decode_b64(val: str) -> str:
     return base64.b64decode(val.encode("ascii")).decode("utf-8")
 
 
+class KBConfigError(RuntimeError):
+    """Raised when the KnowledgeBase endpoint or auth secret is invalid or untrusted."""
+
+
 class SLTCloudFrontEdgeGateway:
     """
-    Amazon CloudFront Edge Distribution & Security Layer for SLTMobitel AI Agent.
+    Amazon CloudFront Edge Distribution & Local TTL Response Cache Layer for SLTMobitel AI Agent.
     Provides:
     1. Edge Cache (TTL-based response caching for repeated KnowledgeBase queries to cut API latency from ~3s to <5ms).
-    2. Custom Origin Header Injection (injected at the CloudFront Origin level so clients don't expose secrets).
-    3. AWS WAF / Edge Rate-Limiting & Security Headers (`X-Amz-Cf-Id`, `X-Cache: Hit from cloudfront` / `Miss from cloudfront`).
-    4. Origin Failover & Routing between CloudFront Domain (`*.cloudfront.net`) and API Gateway Origin.
+    2. Custom Origin Header Injection (`x-auth-secret`) with SSRF / untrusted-host protection.
+    3. Origin Routing between CloudFront Domain (`*.cloudfront.net`) and API Gateway Origin (`/prod/retrieve`).
     """
 
     @staticmethod
@@ -62,6 +65,21 @@ class SLTCloudFrontEdgeGateway:
             "waf_blocked": 0
         }
 
+    @property
+    def is_configured(self) -> bool:
+        return bool((self.api_gateway_origin or self.cloudfront_domain) and self.origin_custom_secret)
+
+    def trusted_hosts(self) -> set[str]:
+        """Hostnames allowed to receive the configured x-auth-secret."""
+        hosts = set()
+        for url in (self.api_gateway_origin, self.cloudfront_domain, _decode_b64(_FALLBACK_ORIGIN_B64)):
+            if not url:
+                continue
+            parsed = urlparse(url if url.startswith("http") else f"https://{url}")
+            if parsed.hostname:
+                hosts.add(parsed.hostname.lower())
+        return hosts
+
     def resolve_target_url(self, endpoint_override: str | None = None) -> str:
         """
         Resolves the active endpoint URL:
@@ -80,9 +98,7 @@ class SLTCloudFrontEdgeGateway:
         return self.api_gateway_origin
 
     def build_origin_headers(self, secret_override: str | None = None) -> dict[str, str]:
-        """
-        Builds HTTP headers injected by CloudFront when forwarding viewer requests to the API Gateway Origin.
-        """
+        """Builds HTTP headers when forwarding requests to the API Gateway Origin."""
         secret = (secret_override or self.origin_custom_secret).strip()
         return {
             "Content-Type": "application/json",
@@ -98,7 +114,7 @@ class SLTCloudFrontEdgeGateway:
         return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()[:24]
 
     def get_cached_response(self, query: str, top_k: int) -> dict | None:
-        """Checks the CloudFront Edge Cache for a non-expired response."""
+        """Checks the Edge Cache for a non-expired response."""
         self.metrics["total_requests"] += 1
         if not self.cache_enabled:
             self.metrics["cache_misses"] += 1
@@ -118,7 +134,7 @@ class SLTCloudFrontEdgeGateway:
         return None
 
     def put_cached_response(self, query: str, top_k: int, payload: dict) -> dict:
-        """Stores an API Gateway Origin response in the CloudFront Edge Cache."""
+        """Stores an API Gateway Origin response in the Edge Cache."""
         key = self._make_cache_key(query, top_k)
         enriched = dict(payload)
         enriched["cloudfront_status"] = "Miss from cloudfront (Fetched from Origin us-east-1)"
@@ -132,6 +148,5 @@ class SLTCloudFrontEdgeGateway:
         return enriched
 
     def clear_edge_cache(self):
-        """Simulates a CloudFront Cache Invalidation (`/*`)."""
+        """Clears the response cache."""
         self._edge_cache.clear()
-

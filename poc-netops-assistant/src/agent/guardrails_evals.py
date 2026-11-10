@@ -88,7 +88,13 @@ class SovereignGuardrailsAndEvals:
                     warnings.append(f"Blocked unsafe command recommendation matching `{pat}`")
                     safe = False
 
-        has_citations = len(citations) > 0 or ("[citation:" in response_text.lower()) or ("slt-" in response_text.lower())
+        is_abstention = "don't have enough knowledge" in response_text.lower()
+        has_citations = (
+            len(citations) > 0
+            or ("[citation:" in response_text.lower())
+            or ("slt-" in response_text.lower())
+            or is_abstention
+        )
         if not has_citations:
             warnings.append("No explicit KB/SOP citation tag detected in response.")
 

@@ -126,7 +126,8 @@ Read the KNOWLEDGEBASE PASSAGES below and answer the USER QUESTION clearly, natu
 
 STRICT RULES:
 1. Answer ONLY if the KNOWLEDGEBASE PASSAGES actually contain the information needed to answer the USER QUESTION.
-2. If the user is following up on a troubleshooting session (e.g., reporting that the power socket is fine, the router is on with no connection, internet is slow, or they already restarted it), acknowledge their update and guide them through the remaining diagnostic steps in the passages (such as checking GPON/LOS/WLAN LEDs, checking data quota on the MySLT App / #170# / #1456#, or calling 1212).
+2. If the user is following up on a troubleshooting session (e.g., reporting that the power socket is fine, the router is on with no connection, internet is slow, or they already restarted it), acknowledge their update and suggest ONLY the next steps that actually appear in the passages that they have not tried yet. If none remain, advise contacting SLTMobitel Support (1212 / 1717) or the MySLT App.
+3. NEVER add facts, prices, USSD codes, LED names, timings, phone numbers or procedures that are not written in the passages, even if you believe they are true.
 3. If the passages are completely unrelated to the user's question, set "has_enough_knowledge" to false and set "answer" to: "I don't have enough knowledge in the SLTMobitel KnowledgeBase to answer that specific question."
 4. Write in clean, natural, easy-to-read English. Do NOT dump raw database text, chunk IDs, or technical metadata.
 5. Respond ONLY with a valid JSON object matching this exact schema:
@@ -210,7 +211,7 @@ STRICT RULES:
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.gemini_model}:generateContent?key={api_key}"
+            f"{self.gemini_model}:generateContent"
         )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -222,13 +223,23 @@ STRICT RULES:
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            # Send the key as a header, not in the URL, so it never appears in logs/proxies/tracebacks.
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key.strip()},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            raw_text = body["candidates"][0]["content"][0]["text"] if "parts" not in body["candidates"][0]["content"] else body["candidates"][0]["content"]["parts"][0]["text"]
-            return self._extract_json_dict(raw_text)
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Gemini API returned HTTP {exc.code}") from None
+        candidates = body.get("candidates") or []
+        if not candidates:
+            raise RuntimeError("Gemini API returned no candidates (possibly blocked by safety filters).")
+        parts = candidates[0].get("content", {}).get("parts") or []
+        raw_text = "".join(p.get("text", "") for p in parts)
+        if not raw_text.strip():
+            raise RuntimeError("Gemini API returned an empty response.")
+        return self._extract_json_dict(raw_text)
 
 
 if __name__ == "__main__":

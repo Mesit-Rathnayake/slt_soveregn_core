@@ -197,9 +197,13 @@ class SLTMCPToolServer:
             }
 
         if name == "slt_query_cloud_kb":
+            try:
+                safe_top_k = max(1, min(int(args.get("top_k", 3)), 5))
+            except (TypeError, ValueError):
+                safe_top_k = 3
             res = self.rag.answer_kb_question(
                 sanitized_query=str(args.get("sanitized_query", "")),
-                top_k=int(args.get("top_k", 3)),
+                top_k=safe_top_k,
                 mode_override=args.get("inference_engine"),
                 ollama_model=args.get("ollama_model"),
                 gemini_api_key=args.get("gemini_api_key"),
@@ -242,7 +246,9 @@ class SLTMCPToolServer:
                 cf.clear_edge_cache()
             status_payload = {
                 "action": action,
-                "edge_location": "MAA50-P1 (South Asia Edge)",
+                "cache_type": "Local in-process TTL cache (not the Amazon CloudFront edge cache)",
+                "ttl_seconds": cf.cache_ttl_seconds,
+                "kb_configured": cf.is_configured,
                 "metrics": dict(cf.metrics)
             }
             return {

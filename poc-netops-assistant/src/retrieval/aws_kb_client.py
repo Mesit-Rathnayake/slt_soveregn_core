@@ -12,23 +12,18 @@ SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from urllib.parse import urlparse
+
 from agent.llm_gateway import load_dotenv_file
-from retrieval.cloudfront_gateway import (
-    SLTCloudFrontEdgeGateway,
-    _FALLBACK_ORIGIN_B64,
-    _FALLBACK_TOKEN_B64,
-    _decode_b64,
-)
+from retrieval.cloudfront_gateway import SLTCloudFrontEdgeGateway, KBConfigError
 
 
 class SLTMobitelCloudKBClient:
     """
-    SLTMobitel KnowledgeBase Access HTTP API Client (AWS API Gateway / CloudFront).
-    Reads SLT_KB_API_URL and SLT_KB_AUTH_SECRET from .env, Streamlit Cloud Secrets, or encoded runtime config.
+    SLTMobitel KnowledgeBase Access HTTP API Client (AWS API Gateway / optional CloudFront).
+    Reads SLT_KB_API_URL and SLT_KB_AUTH_SECRET ONLY from .env or Streamlit Cloud Secrets.
+    No credentials are embedded in source code.
     """
-
-    DEFAULT_ENDPOINT = _decode_b64(_FALLBACK_ORIGIN_B64)
-    DEFAULT_SECRET = _decode_b64(_FALLBACK_TOKEN_B64)
 
     @staticmethod
     def clean_raw_kb_text(raw_text: str) -> str:
@@ -213,7 +208,19 @@ class SLTMobitelCloudKBClient:
             return cached
 
         url = self.cloudfront.resolve_target_url(endpoint_override or self.endpoint_url)
-        secret = (secret_override or self.auth_secret).strip()
+        target_host = (urlparse(url).hostname or "").lower()
+        trusted = self.cloudfront.trusted_hosts()
+        if self.endpoint_url:
+            trusted.add((urlparse(self.endpoint_url).hostname or "").lower())
+        if urlparse(url).scheme != "https":
+            raise KBConfigError("KnowledgeBase endpoint must use HTTPS.")
+        # Never send the configured secret to a host the operator did not configure (SSRF / secret exfiltration).
+        if target_host not in trusted and not (secret_override and secret_override.strip()):
+            raise KBConfigError(
+                f"Refusing to send configured KB credentials to untrusted host '{target_host}'. "
+                "Provide a matching secret_override or configure SLT_KB_API_URL."
+            )
+        secret = (secret_override or self.auth_secret or "").strip()
 
         payload = {
             "query": query.strip(),
@@ -227,9 +234,15 @@ class SLTMobitelCloudKBClient:
             method="POST"
         )
 
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw_body = resp.read().decode("utf-8")
-            data = json.loads(raw_body)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw_body = resp.read().decode("utf-8")
+                data = json.loads(raw_body)
+        except urllib.error.HTTPError as exc:
+            # Do not echo the response body; it may reflect request headers.
+            raise RuntimeError(f"KnowledgeBase API returned HTTP {exc.code}") from None
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"KnowledgeBase API unreachable: {exc.reason}") from None
 
         raw_chunks = data.get("chunks", [])
         normalized_chunks = []
