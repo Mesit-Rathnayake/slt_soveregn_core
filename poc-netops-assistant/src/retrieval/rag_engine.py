@@ -157,6 +157,8 @@ class SovereignNetOpsRAG:
             return "work"
         if w in ("slow", "slower", "slowly"):
             return "slow"
+        if w in ("turned", "powered", "switched"):
+            return "power"
         if w.startswith("activ"):
             return "activ"
         if w.startswith("packag"):
@@ -296,10 +298,10 @@ class SovereignNetOpsRAG:
             return ans, bullets
 
         is_troubleshoot_intent = asks(
-            "not working", "slow", "low speed", "speed is", "troubleshoot", "restart",
+            "not working", "slow", "slower", "slowly", "low speed", "speed is", "troubleshoot", "restart",
             "restarted", "reboot", "disconnected", "no connection", "no internet",
             "blinking", "problem", "issue", "fault", "broken", "socket", "outlet",
-            "on but", "on bot"
+            "on but", "on bot", "turned on", "powered on", "switched on", "is on"
         )
 
         # 1A. Active packages (#888#)
@@ -472,16 +474,16 @@ class SovereignNetOpsRAG:
         # 7. Multi-stage router / internet troubleshooting (KB facts only)
         router_terms = (
             "router", "restart", "restarted", "reboot", "wifi", "wi-fi", "wlan", "cable", "cables",
-            "slow", "speed", "disconnect", "connection", "connectivity", "internet", "broadband",
-            "led", "blinking", "light", "lights", "socket", "outlet", "power", "button"
+            "slow", "slower", "slowly", "speed", "disconnect", "connection", "connectivity", "internet", "broadband",
+            "led", "blinking", "light", "lights", "socket", "outlet", "power", "button", "turned", "powered"
         )
         if (asks(*router_terms) or cls._has_any_term(context_part, router_terms)) and grounded(
                 "router", "wifi", "wi-fi", "wlan", "gpon", "restart", "internet", "cable", "cables",
-                "slow", "quota", "outlet", "connection", "telephone"):
+                "slow", "quota", "outlet", "connection", "telephone", "socket", "power"):
             escalate = "**Report a fault:** Call **`1212`** (Fixed/Fibre) or **`1717`** (Mobile), or log it in the **MySLT App** (`https://myslt.slt.lk/`)."
 
             # Stage: already restarted, still failing
-            if asks("restarted", "rebooted", "already tried", "did that", "done that", "still slow", "still not working"):
+            if asks("restarted", "rebooted", "already tried", "did that", "done that", "still slow", "still not working", "already restarted"):
                 ans = "Since you have **already restarted the router** and the problem continues, these are the remaining checks from the KnowledgeBase:"
                 bullets = [
                     "**1. Check your data quota:** In the **MySLT App** → Internet → Data Remaining, confirm your quota is not exceeded (Unlimited LTE Flash packages drop to `1 Mbps` after the daily `5 GB` / `10 GB`).",
@@ -492,10 +494,10 @@ class SovereignNetOpsRAG:
                 return ans, bullets
 
             # Stage: slow internet
-            if asks("slow", "low speed", "speed is very low", "speed is low", "very low", "lagging", "buffering") or (
-                asks("speed") and asks("low", "bad", "poor", "drop", "issue")
-            ):
-                if cls._has_any_term(context_part, ("slow", "speed", "lagging")):
+            if asks("slow", "slower", "slowly", "low speed", "speed is very low", "speed is low", "very low", "lagging", "buffering") or (
+                asks("speed") and asks("low", "bad", "poor", "drop", "issue", "down", "slower", "slowly", "problem", "usual")
+            ) or asks("slower than", "speed is slow", "speed is slower"):
+                if cls._has_any_term(context_part, ("slow", "slower", "slowly", "speed", "lagging")):
                     ans = "If your **internet speed is still low** after the basic steps, check these next:"
                     bullets = [
                         "**1. Detailed usage report:** MySLT App → Internet → Data Remaining → More → **Enable Detailed Reports**, to see whether your quota has been used up.",
@@ -514,8 +516,24 @@ class SovereignNetOpsRAG:
                 ]
                 return ans, bullets
 
-            # Stage: router powered on but no connection
-            if asks("no connection", "no internet", "on but", "on bot", "lights are on", "router is on"):
+            # Stage: router confirmed powered on / on but no connection
+            if asks(
+                "no connection", "no internet", "on but", "on bot", "lights are on",
+                "router is on", "router is turned on", "router is powered on",
+                "turned on", "powered on", "switched on", "it is on", "device is on"
+            ) or (
+                asks("router", "device", "it", "power") and asks("turned on", "powered on", "switched on", "is on")
+            ):
+                if cls._has_any_term(context_part, ("slow", "slower", "slowly", "speed", "lagging")):
+                    ans = "With the **router powered on**, check these next steps to resolve the slow connection:"
+                    bullets = [
+                        "**1. `WLAN` & `GPON` LEDs:** Confirm `WLAN` is ON (press **Wi-Fi / WLAN** button if OFF) and `GPON` is solid green.",
+                        "**2. Check Data Quota:** In the **MySLT App** (`https://myslt.slt.lk/`) → Internet → Data Remaining, verify you haven't exceeded your daily/monthly quota.",
+                        "**3. Cable integrity:** Verify that the Fibre/telephone patch cord and Ethernet cables are tightly connected.",
+                        "**4. Change Wi-Fi Password:** Prevent unauthorized devices from consuming bandwidth, or call **`1212`** / **`1717`** for line inspection."
+                    ]
+                    return ans, bullets
+
                 ans = "If your **router is powered on but there is no internet connection**, check the following:"
                 bullets = [
                     "**1. `WLAN` LED:** It should be ON. If it is OFF, press the **Wi-Fi / WLAN** button on the router.",
@@ -527,7 +545,7 @@ class SovereignNetOpsRAG:
 
             # Stage: power socket / wall outlet confirmed fine
             if asks("power socket", "wall socket", "wall outlet", "socket is fine", "outlet is fine", "power is fine") or (
-                asks("socket", "outlet") and asks("fine", "ok", "working", "good")
+                asks("socket", "outlet", "wall") and asks("fine", "ok", "working", "good")
             ):
                 if cls._has_any_term(context_part, ("socket", "outlet")):
                     ans = "With the **power socket and wall outlet both confirmed working**, check the router itself:"
@@ -549,7 +567,7 @@ class SovereignNetOpsRAG:
 
             # Stage: physical router button not responding
             if asks("button", "switch") and asks("doesnot", "does not", "doesn't", "did not", "didn't", "not working",
-                                                 "nothing happens", "broken", "stuck", "dead", "won't", "wont"):
+                                                 "nothing happens", "broken", "stuck", "dead", "won't", "wont", "not responding"):
                 ans = "If the **router button is not responding**:"
                 bullets = [
                     "**1. Restart from the wall:** Switch the router off at the wall outlet (or unplug it), then plug it back in.",

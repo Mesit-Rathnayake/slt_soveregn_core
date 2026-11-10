@@ -386,6 +386,76 @@ def test_multi_turn_supervisor_troubleshooting_flow():
         assert len(summary_res["key_points"]) == 5
 
 
+def test_multi_turn_slow_router_and_affirmation_sequence():
+    """
+    Verifies that conversational greeting typos ('Hellow'), slow router complaints ('slower than the usual'),
+    and follow-up router power confirmations ('Router is turned on' -> 'router is powered on')
+    advance progressively without hallucinating, repeating initial steps, or falsely abstaining.
+    """
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    troubleshoot_kb = {
+        "query": "Router slow troubleshooting",
+        "chunks": [
+            {
+                "doc_id": "KB-CHUNK-ROUTER-SLOW",
+                "doc_title": "SLT Router & Broadband Troubleshooting",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.88)",
+                "content": "FAQ: How to troubleshoot slow internet? 1. Check data quota in MySLT App. 2. Restart router. 3. Change Wi-Fi password. 4. Check telephone line.",
+                "score": 0.88,
+                "similarity_score": 0.88
+            }
+        ],
+        "count": 1
+    }
+
+    history = []
+    # Turn 1: Typo greeting 'Hellow'
+    res1 = agent.run_agent("Hellow", route_mode="AUTO")
+    assert res1["intent_route"] == "CONVERSATIONAL_GREETING"
+    assert res1["answer_markdown"] == "Hello! How can I help you today?"
+    history.append({"user_input": "Hellow", "agent_response": res1})
+
+    # Turn 2: 'My Router seems to be slower than the usual'
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=troubleshoot_kb):
+        res2 = agent.run_agent(
+            "My Router seems to be slower than the usual",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+            conversation_history=history
+        )
+        assert res2["has_enough_knowledge"] is True
+        assert "slow" in res2["answer_markdown"].lower()
+        assert "quota" in " ".join(res2["key_points"]).lower()
+        history.append({"user_input": "My Router seems to be slower than the usual", "agent_response": res2})
+
+        # Turn 3: 'Router is turned on'
+        res3 = agent.run_agent(
+            "Router is turned on",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+            conversation_history=history
+        )
+        assert res3["has_enough_knowledge"] is True
+        assert "router powered on" in res3["answer_markdown"].lower() or "remaining verification" in res3["answer_markdown"].lower()
+        assert res3["answer_markdown"] != res2["answer_markdown"]
+        history.append({"user_input": "Router is turned on", "agent_response": res3})
+
+        # Turn 4: 'router is powered on' (affirmation re-statement)
+        res4 = agent.run_agent(
+            "router is powered on",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+            conversation_history=history
+        )
+        assert res4["has_enough_knowledge"] is True
+        assert "remaining verification" in res4["answer_markdown"].lower()
+        assert "1212" in " ".join(res4["key_points"])
+
+
+
 
 
 

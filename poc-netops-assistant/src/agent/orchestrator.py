@@ -40,8 +40,10 @@ class SLTMobitelUnifiedAgent:
     FOLLOWUP_PRONOUNS = {"it", "this", "that", "they", "them", "its", "those", "these", "above", "same"}
     TROUBLESHOOT_FOLLOWUP_TERMS = {
         "socket", "outlet", "plug", "plugged", "adapter", "button", "light", "lights",
-        "led", "leds", "blinking", "restarted", "rebooted", "reboot", "checked",
-        "tried", "fine", "slow", "speed", "lagging", "buffering", "still", "cables", "cable"
+        "led", "leds", "blinking", "green", "red", "restarted", "rebooted", "reboot",
+        "checked", "tried", "fine", "slow", "slower", "slowly", "speed", "lagging",
+        "buffering", "still", "cables", "cable", "turned", "powered", "switched",
+        "enabled", "connected", "tight", "tightly", "working", "already", "done", "on"
     }
 
     def __init__(self, manuals_dir: Path, enable_embeddings: bool = True):
@@ -99,8 +101,9 @@ class SLTMobitelUnifiedAgent:
             "flash", "trio", "unlimited", "anytime", "gamer", "lms", "streamer", "extender",
             "wps", "branch", "contact", "hotline", "1212", "1717", "prepaid", "postpaid",
             "volte", "megaline", "phone", "voice", "enterprise", "sme", "cloud", "cyber",
-            "internet", "connection", "connectivity", "speed", "slow", "socket", "outlet",
-            "cable", "cables", "light", "lights", "led", "button", "restarted", "reboot", "working"
+            "internet", "connection", "connectivity", "speed", "slow", "slower", "slowly",
+            "socket", "outlet", "cable", "cables", "light", "lights", "led", "button",
+            "restarted", "reboot", "working", "turned", "powered"
         }
         if any(w in domain_terms for w in words):
             return None
@@ -152,12 +155,17 @@ class SLTMobitelUnifiedAgent:
         if any(re.search(pat, joined) for pat in capability_patterns):
             return "CAPABILITIES"
 
-        # 6. Greetings (English & Sinhala/Tamil transliterations)
+        # 6. Greetings (English, common typos like 'hellow'/'helo', & Sinhala/Tamil transliterations)
         greeting_words = {
-            "hi", "hii", "hiii", "hello", "helloo", "hey", "heyy", "ayubowan",
-            "morning", "afternoon", "evening", "greetings", "yo", "hola", "kohomada", "vanakkam"
+            "hi", "hii", "hiii", "hy", "hai", "hello", "helloo", "hellow", "helo", "heloo",
+            "hlo", "hlw", "hey", "heyy", "ayubowan", "morning", "afternoon", "evening",
+            "greetings", "yo", "hola", "kohomada", "vanakkam", "gm", "ga", "ge"
         }
-        if words[0] in greeting_words or any(sub in compact for sub in ("goodmorning", "goodafternoon", "goodevening", "subhadawasak")):
+        is_first_word_greeting = (
+            words[0] in greeting_words
+            or bool(re.match(r"^(?:h+e+l+o+w*|h+i+|h+e+y+|h+l+o+|h+l+w+|h+a+i+)$", words[0]))
+        )
+        if is_first_word_greeting or any(sub in compact for sub in ("goodmorning", "goodafternoon", "goodevening", "subhadawasak")):
             if len(words) <= 6 or any(w in {"you", "your", "ask", "help", "know", "today", "there", "agent", "bot"} for w in words):
                 return "GREETING"
 
@@ -200,9 +208,10 @@ class SLTMobitelUnifiedAgent:
         if prev_route != "NETOPS_INCIDENT":
             prev_words = set(re.findall(r"[a-zA-Z]+", prev_text.lower()))
             prev_was_troubleshooting = bool(prev_words.intersection({
-                "router", "internet", "wifi", "wlan", "slow", "speed", "connection",
-                "connectivity", "socket", "outlet", "restarted", "reboot", "working",
-                "light", "lights", "led", "cable", "cables", "button", "voice", "telephone"
+                "router", "internet", "wifi", "wlan", "slow", "slower", "slowly", "speed",
+                "connection", "connectivity", "socket", "outlet", "restarted", "reboot",
+                "working", "light", "lights", "led", "cable", "cables", "button",
+                "turned", "powered", "switched", "voice", "telephone"
             }))
             if prev_was_troubleshooting:
                 if lower_s.startswith(("ok now", "now ", "still ", "already ", "but ")):
@@ -446,17 +455,24 @@ class SLTMobitelUnifiedAgent:
             if rep.get("llm_fallback_warning"):
                 warnings_list.append(rep["llm_fallback_warning"])
 
-            # Prevent the deterministic fallback from repeating the exact same answer twice in a row!
+            # Prevent the deterministic fallback from repeating the exact same answer across consecutive turns
             if conversation_history and rep.get("inference_mode") == "AWS_KB_DIRECT_SYNTHESIS":
-                prev_ans = conversation_history[-1].get("agent_response", {}).get("answer_markdown", "")
-                if prev_ans and prev_ans.strip() == rep["answer"].strip():
-                    rep["has_enough_knowledge"] = False
+                recent_answers = {
+                    t.get("agent_response", {}).get("answer_markdown", "").strip()
+                    for t in conversation_history[-2:]
+                }
+                if rep["answer"].strip() in recent_answers:
+                    rep["has_enough_knowledge"] = True
                     rep["answer"] = (
-                        "I don't have any additional troubleshooting details beyond the previous steps in the "
-                        "current SLTMobitel KnowledgeBase. For further assistance or hardware replacement, please "
-                        "contact **SLTMobitel Support (`1212` / `1717`)** or log a ticket via the **MySLT App**."
+                        "Since you have already checked those initial steps, here are the **remaining verification "
+                        "and support escalation steps** in the SLTMobitel KnowledgeBase:"
                     )
-                    rep["key_points"] = []
+                    rep["key_points"] = [
+                        "**1. Verify `WLAN` & `GPON` LEDs:** Ensure `WLAN` is ON (press the **Wi-Fi / WLAN** button if OFF) and `GPON` is **solid green**.",
+                        "**2. Check Data Quota (`MySLT App` / `#170#` / `#1456#`):** Open **MySLT App → Internet → Data Remaining** (`https://myslt.slt.lk/`) to confirm your package quota is not exceeded.",
+                        "**3. Cables, Wi-Fi Password & Restart:** Check that telephone/Fibre and Ethernet cables are tightly connected, restart the router, and change your Wi-Fi password if speed is slow.",
+                        "**4. Contact SLTMobitel Support:** Call **`1212`** (Fixed/Fibre/PEOTV) or **`1717`** (Mobile), or log a fault ticket via the **MySLT App**."
+                    ]
 
             has_knowledge = bool(rep.get("has_enough_knowledge", True))
             headline = "SLTMobitel Assistant"
