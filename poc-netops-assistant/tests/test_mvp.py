@@ -162,6 +162,56 @@ def test_check_remaining_data_quota_inquiry():
         assert "#888#" in key_points_joined
 
 
+def test_mobitel_data_loan_inquiry():
+    """
+    Verifies that inquiries about Mobitel Data Loan filter out unformatted website crawl text
+    (e.g., application forms, bill proofs) and cleanly present the 3-step activation via #170#,
+    SMS DB to 7678 balance check, and automatic recharge recovery.
+    """
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    loan_scrape_kb = {
+        "query": "How to get a data loan",
+        "chunks": [
+            {
+                "doc_id": "KB-CHUNK-LOAN",
+                "doc_title": "SLTMobitel Data Loan",
+                "source_file": "aws-api-gateway:/prod/retrieve",
+                "section": "Chunk #1 (Score: 0.88)",
+                "content": (
+                    "Application Form - Download ApplicationNIC / Driving License / Passport"
+                    "Valid Bill Proofing - Water Bills / Electricity Bills How to Get a New Connection?\n"
+                    "Step 1 - Dial #170#\n"
+                    "Step 2 - Select Option 8 Data Loan\n"
+                    "Step 3 - Select the applicable loan (option 1,2 or 3)\n"
+                    "Data Loan FAQs"
+                ),
+                "score": 0.88,
+                "similarity_score": 0.88
+            }
+        ],
+        "count": 1
+    }
+
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=loan_scrape_kb):
+        res = agent.run_agent(
+            "How to get a data loan",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE"
+        )
+        assert res["has_enough_knowledge"] is True
+        assert "data loan" in res["answer_markdown"].lower()
+        # Must filter out stray new connection document crawl headers
+        assert "application form" not in res["answer_markdown"].lower()
+        assert "driving license" not in res["answer_markdown"].lower()
+        # Must list verified activation steps
+        kps = " ".join(res["key_points"])
+        assert "#170#" in kps
+        assert "Option 8" in kps
+        assert "7678" in kps
+
+
 def test_guardrails_block_prompt_injection_and_score_evals():
     manuals_dir = BASE_DIR / "data" / "approved_manuals"
     agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)

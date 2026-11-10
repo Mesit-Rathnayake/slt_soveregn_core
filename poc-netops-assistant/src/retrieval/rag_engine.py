@@ -367,6 +367,39 @@ class SovereignNetOpsRAG:
             ]
             return ans, bullets
 
+        # 1AA. Mobitel Data Loan Facility (#170#)
+        if asks("loan", "data loan", "borrow", "borrow data", "emergency data") and grounded(
+                "loan", "170", "7678", "recharge", "repay", "data loan", "recovery"):
+            # If asking how to check data loan balance specifically
+            if asks("balance", "remaining", "check", "available") and not asks("get", "activate", "how to get", "obtain", "repay", "pay"):
+                ans = "Here is how to check your **Mobitel Data Loan balance**:"
+                bullets = [
+                    "**1. SMS Self-Care:** Type **`DB`** and send it via SMS to **`7678`**.",
+                    "**2. USSD:** Dial **`#170#`** on your mobile."
+                ]
+                return ans, bullets
+
+            # If asking how to repay a data loan
+            if asks("repay", "re-pay", "recover", "recovery", "settle", "pay back"):
+                ans = "Here is how to **re-pay your Mobitel Data Loan**:"
+                bullets = [
+                    "**Automatic recovery upon recharge:** The loan amount + service charge is automatically recovered when you perform a normal recharge or a voice/data package recharge.",
+                    "**Full recovery:** If your recharge amount is sufficient, the total loan and service fee are deducted entirely.",
+                    "**Partial recovery:** If your recharge amount is insufficient, a partial deduction is made, and the remaining balance is recovered on your next recharge."
+                ]
+                return ans, bullets
+
+            # Default: How to get / activate a data loan
+            ans = "To obtain a **Mobitel Data Loan**, follow these steps on your phone:"
+            bullets = [
+                "**Step 1:** Dial **`#170#`** on your phone.",
+                "**Step 2:** Select **Option 8 (“Data Loan”)**.",
+                "**Step 3:** Select your applicable loan tier (**Option 1, 2, or 3**).",
+                "**Balance check:** SMS **`DB`** to **`7678`** or dial **`#170#`**.",
+                "**Repayment:** Automatically deducted (full or partial) on your next mobile recharge."
+            ]
+            return ans, bullets
+
         # 1B. eSIM & new-connection documents
         if asks("esim", "e-sim", "eid", "06#") and grounded("esim", "e-sim", "06#", "eid"):
             ans = "Here is how to check **SLTMobitel eSIM** compatibility:"
