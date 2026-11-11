@@ -205,6 +205,8 @@ class SLTMobitelUnifiedAgent:
             for w in tokens
         ) or bool(set(tokens).intersection({
             "internet", "connection", "connectivity", "quota", "remaining", "data"
+        })) or bool(set(tokens).intersection({
+            "solved", "fixed", "resolved"
         }))
         has_previous_troubleshooting = bool(prev_words.intersection({
             "router", "internet", "wifi", "wlan", "slow", "speed",
@@ -248,6 +250,11 @@ class SLTMobitelUnifiedAgent:
                         phrase in lower_s
                         for phrase in ("not finished", "not exceeded", "plenty", "enough", "available")
                     )
+                ):
+                    return True
+                if any(
+                    phrase in lower_s
+                    for phrase in ("problem is solved", "problem is fixed", "issue is resolved", "working now")
                 ):
                     return True
         return False

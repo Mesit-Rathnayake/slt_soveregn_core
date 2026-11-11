@@ -821,6 +821,44 @@ def test_successful_restart_outcome_precedes_failure_diagnostics():
     assert "already restarted" not in final_answer
 
 
+def test_outcome_only_followup_uses_active_router_topic():
+    """A resolution statement without router words still closes the issue."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+    history = []
+    router_chunk = {
+        "query": "slow internet router",
+        "chunks": [{
+            "doc_id": "KB-CHUNK-ROUTER",
+            "doc_title": "SLT Router & Broadband Troubleshooting",
+            "source_file": "aws-api-gateway:/prod/retrieve",
+            "section": "Chunk #1",
+            "content": (
+                "FAQ: Slow internet. Check data quota in MySLT App, restart router, "
+                "change Wi-Fi password, check telephone line. WLAN ON and GPON solid green."
+            ),
+            "score": 0.88,
+            "similarity_score": 0.88,
+        }],
+        "count": 1,
+    }
+
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=router_chunk):
+        for query in ("My internet is slow", "I still have plenty of data quota",
+                      "I restarted the router", "The problem is solved now"):
+            result = agent.run_agent(
+                query,
+                route_mode="AUTO",
+                inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+                conversation_history=history,
+            )
+            history.append({"user_input": query, "agent_response": result})
+
+    final_answer = history[-1]["agent_response"]["answer_markdown"].lower()
+    assert "resolved" in final_answer
+    assert "don't have enough knowledge" not in final_answer
+
+
 def test_checked_quota_statement_with_typo_advances_router_diagnosis():
     """A typo-heavy quota status statement is not a self-care request."""
     manuals_dir = BASE_DIR / "data" / "approved_manuals"
