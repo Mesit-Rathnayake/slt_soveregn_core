@@ -297,6 +297,15 @@ class SLTMobitelUnifiedAgent:
             (r"\b(?:router|device)\b.*\b(?:on|turned|powered)\b", "router_powered_on"),
             (r"\b(?:socket|outlet)\b.*\b(?:fine|working|good|okay|ok)\b", "power_socket_checked"),
         )
+        if re.search(r"\b(?:slow|slower|speed|lagging|buffering)\b", text):
+            memory["facts"] = [
+                fact for fact in memory["facts"]
+                if fact not in {
+                    "issue_resolved",
+                    "router_restarted",
+                    "quota_available",
+                }
+            ]
         for pattern, fact in fact_patterns:
             if re.search(pattern, text):
                 memory["facts"] = [f for f in memory["facts"] if f != fact]
@@ -320,6 +329,38 @@ class SLTMobitelUnifiedAgent:
             cls.TROUBLESHOOT_FOLLOWUP_TERMS
             | {"quota", "data", "remaining", "plenty", "enough", "available"}
         ))
+
+    @classmethod
+    def _troubleshooting_stage(cls, user_input: str, memory: dict) -> str | None:
+        """Return the deterministic diagnostic stage for the active router topic."""
+        if memory.get("active_topic") != "router_troubleshooting":
+            return None
+        text = user_input.lower()
+        if "issue_resolved" in memory.get("facts", []) or re.search(
+            r"\b(?:problem|issue)\s+(?:is\s+)?(?:solved|fixed|resolved)\b|"
+            r"\b(?:working|works)\s+now\b",
+            text,
+        ):
+            return "resolved"
+        facts = set(memory.get("facts", []))
+        if "router_restarted" in facts:
+            return "post_restart"
+        if "quota_available" in facts:
+            return "quota_confirmed"
+        if "slow_connection" in facts:
+            return "initial_slow"
+        return "initial"
+
+    @classmethod
+    def _troubleshooting_retrieval_query(cls, stage: str | None) -> str | None:
+        """Use a stable KB query for each diagnostic stage, not the raw follow-up."""
+        return {
+            "initial": "router internet troubleshooting",
+            "initial_slow": "slow internet router troubleshooting",
+            "quota_confirmed": "router troubleshooting WLAN GPON cables after quota checked",
+            "post_restart": "router troubleshooting GPON WLAN cables after restart",
+            "resolved": "router troubleshooting issue resolved",
+        }.get(stage)
 
     def run_agent(
         self,
@@ -430,6 +471,8 @@ class SLTMobitelUnifiedAgent:
             recovered_memory.get("active_topic") or recovered_memory.get("facts")
         )
         active_memory = self._update_session_memory(clean_user_input, recovered_memory)
+        troubleshooting_stage = self._troubleshooting_stage(clean_user_input, active_memory)
+        retrieval_query = self._troubleshooting_retrieval_query(troubleshooting_stage)
         trace_steps.append(
             f"Step 1 (MCP Tool `slt_sanitize_pii`): Masked `{redactions}` sensitive PII/IP/credential fields."
         )
@@ -454,7 +497,7 @@ class SLTMobitelUnifiedAgent:
             if followup:
                 context = self._session_memory_context(active_memory)
                 if context:
-                    clean_text = f"{clean_user_input} (Context: {context})"
+                    clean_text = f"{clean_user_input} (Context: {context}; Stage: {troubleshooting_stage})"
                     trace_steps.append("💬 **Session Memory:** Linked the active topic and verified facts.")
 
         # Step 2: Input Guardrails
@@ -557,6 +600,7 @@ class SLTMobitelUnifiedAgent:
                 mcp_tool_used,
                 {
                     "sanitized_query": clean_text,
+                    "retrieval_query": retrieval_query,
                     "top_k": top_k,
                     "inference_engine": inference_engine,
                     "ollama_model": ollama_model,

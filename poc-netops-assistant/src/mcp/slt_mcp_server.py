@@ -204,6 +204,7 @@ class SLTMCPToolServer:
             res = self.rag.answer_kb_question(
                 sanitized_query=str(args.get("sanitized_query", "")),
                 top_k=safe_top_k,
+                retrieval_query=args.get("retrieval_query"),
                 mode_override=args.get("inference_engine"),
                 ollama_model=args.get("ollama_model"),
                 gemini_api_key=args.get("gemini_api_key"),
@@ -362,4 +363,3 @@ if __name__ == "__main__":
         print(json.dumps(server.list_tools(), indent=2))
     else:
         server.serve_stdio()
-

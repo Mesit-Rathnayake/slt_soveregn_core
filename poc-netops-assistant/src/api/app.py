@@ -445,6 +445,7 @@ if active_user_message:
                 inference_engine=selected_engine,
                 top_k=kb_top_k,
                 conversation_history=st.session_state.chat_history,
+                session_memory=st.session_state.session_memory,
                 bedrock_model=bedrock_model_input
             )
             turn_res["from_voice_input"] = is_voice_turn

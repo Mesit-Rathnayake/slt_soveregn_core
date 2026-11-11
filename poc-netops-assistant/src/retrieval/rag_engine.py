@@ -1001,7 +1001,8 @@ class SovereignNetOpsRAG:
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
         kb_secret_override: str | None = None,
-        kb_endpoint_override: str | None = None
+        kb_endpoint_override: str | None = None,
+        retrieval_query: str | None = None
     ) -> dict:
         """
         Queries the KnowledgeBase API (/prod/retrieve) and synthesizes
@@ -1012,7 +1013,7 @@ class SovereignNetOpsRAG:
         kb_error = None
         try:
             kb_response = self.retrieve_from_aws_kb(
-                query_text=sanitized_query,
+                query_text=retrieval_query or sanitized_query,
                 top_k=top_k,
                 kb_secret_override=kb_secret_override,
                 kb_endpoint_override=kb_endpoint_override
