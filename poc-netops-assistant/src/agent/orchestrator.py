@@ -203,7 +203,9 @@ class SLTMobitelUnifiedAgent:
         has_troubleshooting_language = any(
             w in cls.TROUBLESHOOT_FOLLOWUP_TERMS
             for w in tokens
-        )
+        ) or bool(set(tokens).intersection({
+            "internet", "connection", "connectivity", "quota", "remaining", "data"
+        }))
         has_previous_troubleshooting = bool(prev_words.intersection({
             "router", "internet", "wifi", "wlan", "slow", "speed",
             "connection", "connectivity", "restarted", "reboot",
@@ -239,6 +241,14 @@ class SLTMobitelUnifiedAgent:
                 if lower_s.startswith(("ok now", "now ", "still ", "already ", "but ")):
                     return True
                 if any(w in cls.TROUBLESHOOT_FOLLOWUP_TERMS for w in tokens):
+                    return True
+                if (
+                    {"quota", "data"}.intersection(tokens)
+                    and any(
+                        phrase in lower_s
+                        for phrase in ("not finished", "not exceeded", "plenty", "enough", "available")
+                    )
+                ):
                     return True
         return False
 
