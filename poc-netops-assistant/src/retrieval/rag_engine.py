@@ -103,13 +103,19 @@ class SovereignNetOpsRAG:
         """
         current_q = re.split(r"\s*\(context:", query_text, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         q_lower = current_q.lower()
-        if re.search(r"\b(?:data\s+loan|borrow\s+data|emergency\s+data)\b", q_lower):
-            return "USSD #170# data balance loan"
-        if re.search(
+        has_credit_loan = re.search(
             r"(?:#247#|\b247\b|\bcredit\s+loan\b|\binstant\s+loan\b|\bsmart\s+loan\b|\bcash\s+loan\b|\bvoice\s+loan\b"
             r"|\bborrow\b|\bloan\b|\badvance\b.*\bcredit\b|\bcredit\b.*\badvance\b)",
             q_lower,
-        ):
+        )
+        has_data_loan = re.search(r"\b(?:data\s+loan|borrow\s+data|emergency\s+data)\b", q_lower)
+        # A contrast such as "credit loan, not data loan" names the desired
+        # product explicitly; prefer it over the negated alternative.
+        if has_credit_loan and has_data_loan:
+            return "How to take a credit loan"
+        if has_data_loan:
+            return "USSD #170# data balance loan"
+        if has_credit_loan:
             return "How to take a credit loan"
         if re.search(r"(?:#170#|\b170\b)", q_lower):
             return "USSD #170# data balance loan"
@@ -450,8 +456,14 @@ class SovereignNetOpsRAG:
         ) and grounded(
             "loan", "247", "170", "7678", "recharge", "repay", "data loan", "recovery", "tenure", "outgoing"
         ):
-            is_credit_loan = asks("247", "credit loan", "instant loan", "smart loan", "cash loan", "voice loan",
-                                  "borrow credit", "credit", "advance") or (
+            explicit_credit_loan = asks("247", "credit loan", "instant loan", "smart loan", "cash loan", "voice loan",
+                                        "borrow credit", "credit", "advance")
+            is_contrastive_credit_loan = (
+                explicit_credit_loan
+                and asks("data loan")
+                and re.search(r"\bnot\s+(?:a\s+)?data\s+loan\b", current_q)
+            )
+            is_credit_loan = is_contrastive_credit_loan or explicit_credit_loan or (
                 grounded("247", "outgoing") and not asks("data loan", "borrow data", "emergency data", "170")
             )
             if is_credit_loan:
@@ -966,7 +978,19 @@ class SovereignNetOpsRAG:
                 "llm_fallback_warning": None
             }
 
-        if active_mode in ("AWS_BEDROCK", "GEMINI_CLOUD") and not self._is_kb_summary_query(sanitized_query):
+        # Loan and USSD answers use grounded deterministic templates. These
+        # queries contain competing product names (#247# credit loan versus
+        # #170# data loan), so free-form synthesis can select the wrong product
+        # even when retrieval returned the correct passages.
+        is_loan_or_ussd_query = self._has_any_term(
+            sanitized_query,
+            ("loan", "borrow", "247", "170", "1456", "888", "111", "999", "06")
+        )
+        if (
+            active_mode in ("AWS_BEDROCK", "GEMINI_CLOUD")
+            and not self._is_kb_summary_query(sanitized_query)
+            and not is_loan_or_ussd_query
+        ):
             prompt = self.llm_gateway.build_kb_qa_prompt(sanitized_query, chunks)
             try:
                 llm_res, engine_label = self._invoke_llm(

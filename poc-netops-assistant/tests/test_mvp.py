@@ -283,6 +283,44 @@ def test_credit_loan_and_ussd_code_inquiries():
         kps_170 = " ".join(res_170["key_points"])
         assert "Remaining Data Balance" in kps_170 or "#170#" in kps_170
 
+    # Contrastive clarification must keep the requested credit loan topic and
+    # must not be routed to the data-loan or router troubleshooting templates.
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=credit_loan_kb):
+        res_contrastive = agent.run_agent(
+            "a credit loan not a data loan",
+            route_mode="AUTO",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE"
+        )
+        assert res_contrastive["has_enough_knowledge"] is True
+        assert "credit loan" in res_contrastive["answer_markdown"].lower()
+        assert "#247#" in res_contrastive["answer_markdown"]
+        assert "router" not in (
+            res_contrastive["answer_markdown"] + " ".join(res_contrastive["key_points"])
+        ).lower()
+
+        # Customer-support LLMs must not override the grounded credit-loan
+        # template with a plausible but incorrect data-loan answer.
+        with patch.object(
+            agent.rag,
+            "_invoke_llm",
+            return_value=(
+                {
+                    "has_enough_knowledge": True,
+                    "answer": "To get a Data Loan, dial #170#.",
+                    "key_points": [],
+                    "follow_up_suggestion": ""
+                },
+                "AWS_BEDROCK"
+            )
+        ):
+            res_bedrock_guarded = agent.run_agent(
+                "How to take a credit loan",
+                route_mode="AUTO",
+                inference_engine="AWS_BEDROCK"
+            )
+        assert "#247#" in res_bedrock_guarded["answer_markdown"]
+        assert "#170#" not in res_bedrock_guarded["answer_markdown"]
+
     # 4. Repeated factual loan answers across turns must NOT be swapped for router troubleshooting steps
     with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=credit_loan_kb):
         history = []
@@ -631,7 +669,28 @@ def test_multi_turn_slow_router_and_affirmation_sequence():
         assert "1212" in " ".join(res4["key_points"])
 
 
+def test_multi_turn_credit_loan_does_not_bleed_into_router_followup():
+    """A new credit-loan topic remains isolated after a data-loan answer."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+    history = []
 
+    for query in ("how to take a data loan", "How to take a credit loan"):
+        result = agent.run_agent(
+            query,
+            route_mode="AUTO",
+            inference_engine="AWS_BEDROCK",
+            conversation_history=history,
+        )
+        history.append({"user_input": query, "agent_response": result})
+        assert result["has_enough_knowledge"] is True
+
+    credit_response = history[-1]["agent_response"]
+    assert "#247#" in credit_response["answer_markdown"]
+    assert "#170#" not in credit_response["answer_markdown"]
+    assert "router" not in (
+        credit_response["answer_markdown"] + " ".join(credit_response["key_points"])
+    ).lower()
 
 
 
