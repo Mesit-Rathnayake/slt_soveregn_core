@@ -448,6 +448,23 @@ class SovereignNetOpsRAG:
         ) or (
             asks("check", "how to check", "view", "know", "see") and asks("data", "quota", "usage", "balance", "package", "plan", "bill")
         )
+        explicit_quota_check = (
+            asks("check", "how to check", "view", "know", "see", "how much")
+            and asks("data", "quota", "usage", "balance", "remaining", "data left")
+        )
+        troubleshooting_context = cls._has_any_term(
+            context_part,
+            (
+                "router", "internet", "wifi", "wi-fi", "wlan", "gpon", "slow",
+                "speed", "connection", "connectivity", "restarted", "reboot",
+                "power", "turned on", "powered on", "no internet", "not working"
+            )
+        )
+        # In an active troubleshooting session, a statement such as
+        # "I still have plenty of data" is evidence about the fault, not a
+        # request for self-care instructions.
+        if troubleshooting_context and not explicit_quota_check:
+            is_quota_or_balance_intent = False
 
         # 1AA. Instant Credit Loan (#247#) & Data Loan (#170#)
         if asks(
@@ -756,6 +773,23 @@ class SovereignNetOpsRAG:
                     "**1. Check your data quota:** In the **MySLT App** → Internet → Data Remaining, confirm your quota is not exceeded (Unlimited LTE Flash packages drop to `1 Mbps` after the daily `5 GB` / `10 GB`).",
                     "**2. Check the `GPON` LED:** Solid green means the optical link to SLT is working normally. If it is not solid green, the line needs to be checked by SLT.",
                     "**3. Check the telephone / Fibre line:** Make sure it is tightly connected.",
+                    f"**4.** {escalate}"
+                ]
+                return ans, bullets
+
+            # Stage: customer confirms quota is available during an active
+            # troubleshooting session; continue the diagnosis instead of
+            # restarting with generic balance-check instructions.
+            if (
+                troubleshooting_context
+                and not explicit_quota_check
+                and asks("quota", "remaining", "data", "data left", "plenty")
+            ):
+                ans = "Since your **data quota is still available**, continue with these connection checks:"
+                bullets = [
+                    "**1. `WLAN` & `GPON` LEDs:** Confirm `WLAN` is ON and `GPON` is solid green.",
+                    "**2. Check the cables:** Make sure the telephone/Fibre and Ethernet cables are tightly connected.",
+                    "**3. Change your Wi-Fi password** to prevent unknown devices from using the connection.",
                     f"**4.** {escalate}"
                 ]
                 return ans, bullets

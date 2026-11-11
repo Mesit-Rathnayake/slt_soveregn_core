@@ -197,10 +197,30 @@ class SLTMobitelUnifiedAgent:
         Prevents bleeding old session topics into new questions!
         """
         tokens = re.findall(r"[a-z0-9#*]+", user_input.lower())
-        if not tokens or len(tokens) > 12:
+        if not tokens:
             return False
+        prev_words = set(re.findall(r"[a-z0-9#*]+", prev_text.lower()))
+        has_troubleshooting_language = any(
+            w in cls.TROUBLESHOOT_FOLLOWUP_TERMS
+            for w in tokens
+        )
+        has_previous_troubleshooting = bool(prev_words.intersection({
+            "router", "internet", "wifi", "wlan", "slow", "speed",
+            "connection", "connectivity", "restarted", "reboot",
+            "working", "power", "turned", "powered"
+        }))
+        if len(tokens) > 12:
+            if not (has_troubleshooting_language and has_previous_troubleshooting):
+                return False
         # If the user names an explicit new product/catalog topic or USSD code, treat it as a fresh standalone question
-        if any(t in cls.STANDALONE_TOPIC_TERMS for t in tokens):
+        if (
+            any(t in cls.STANDALONE_TOPIC_TERMS for t in tokens)
+            and not (
+                prev_route != "NETOPS_INCIDENT"
+                and has_previous_troubleshooting
+                and has_troubleshooting_language
+            )
+        ):
             return False
         if any(t in cls.FOLLOWUP_PRONOUNS for t in tokens):
             return True
@@ -599,4 +619,3 @@ class SLTMobitelUnifiedAgent:
                 "Latency (ms)": res["latency_ms"]
             })
         return results
-
