@@ -62,13 +62,25 @@ class SovereignNetOpsRAG:
 
     def retrieve_relevant_sections(self, query_text: str, top_k: int = 4) -> list[dict]:
         query_tokens = set(re.findall(r"[a-zA-Z0-9_-]{3,}", query_text.lower()))
+        ussd_in_q = re.findall(r"[*#]?[0-9]+#?", query_text.lower())
         scored_chunks = []
 
         for chunk in self.knowledge_base:
-            chunk_tokens = set(re.findall(r"[a-zA-Z0-9_-]{3,}", chunk["content"].lower()))
+            chunk_content_lower = chunk["content"].lower()
+            chunk_tokens = set(re.findall(r"[a-zA-Z0-9_-]{3,}", chunk_content_lower))
             lexical_overlap = len(query_tokens.intersection(chunk_tokens))
             if chunk["doc_id"].lower() in query_text.lower():
                 lexical_overlap += 10
+
+            # Boost exact USSD code match (e.g. #247#, #170#, *#06#, 1456, 888)
+            for code in ussd_in_q:
+                if len(code) >= 3 and (code in chunk_content_lower or f"#{code}#" in chunk_content_lower):
+                    lexical_overlap += 6
+
+            # Boost section title match
+            sec_lower = chunk.get("section", "").lower()
+            if any(t in sec_lower for t in query_tokens if len(t) >= 4 and t not in self.STOPWORDS):
+                lexical_overlap += 3
 
             if lexical_overlap > 0:
                 norm_score = min(0.95, 0.55 + (lexical_overlap * 0.06))
@@ -79,6 +91,7 @@ class SovereignNetOpsRAG:
         for overlap, norm_score, chunk in scored_chunks[:top_k]:
             c_copy = {k: v for k, v in chunk.items() if k != "embedding"}
             c_copy["similarity_score"] = round(norm_score, 4)
+            c_copy["score"] = round(norm_score, 4)
             results.append(c_copy)
         return results
 
@@ -119,14 +132,61 @@ class SovereignNetOpsRAG:
         kb_secret_override: str | None = None,
         kb_endpoint_override: str | None = None
     ) -> dict:
-        """Retrieves relevant chunks from the SLTMobitel AWS KnowledgeBase HTTP API."""
+        """
+        Resilient Hybrid Retrieval:
+        1. Queries the SLTMobitel Cloud KnowledgeBase HTTP API (/prod/retrieve).
+        2. Queries the local approved KnowledgeBase catalog (slt_customer_kb_catalog.md & SOPs).
+        3. Merges, scores, and deduplicates retrieved chunks to ensure resilient grounding.
+        """
         effective_query = self._expand_kb_search_query(query_text)
-        return self.aws_kb_client.retrieve(
-            query=effective_query,
-            top_k=top_k,
-            secret_override=kb_secret_override,
-            endpoint_override=kb_endpoint_override
-        )
+        cloud_chunks = []
+        cloud_error = None
+        try:
+            cloud_res = self.aws_kb_client.retrieve(
+                query=effective_query,
+                top_k=top_k,
+                secret_override=kb_secret_override,
+                endpoint_override=kb_endpoint_override
+            )
+            cloud_chunks = cloud_res.get("chunks", [])
+        except Exception as exc:
+            cloud_error = str(exc)
+            cloud_chunks = []
+
+        local_sections = self.retrieve_relevant_sections(query_text, top_k=top_k)
+        local_chunks = []
+        for sec in local_sections:
+            local_chunks.append({
+                "doc_id": sec.get("doc_id", "SLT-CUST-KB-01"),
+                "doc_title": sec.get("doc_title", "SLTMobitel Customer KnowledgeBase"),
+                "source_file": sec.get("source_file", "slt_customer_kb_catalog.md"),
+                "section": sec.get("section", ""),
+                "content": sec.get("content", ""),
+                "score": float(sec.get("similarity_score", 0.75)),
+                "similarity_score": float(sec.get("similarity_score", 0.75))
+            })
+
+        merged_chunks = []
+        seen_texts = set()
+        for c in cloud_chunks:
+            txt = (c.get("content", "") or "").strip()[:80].lower()
+            if txt and txt not in seen_texts:
+                seen_texts.add(txt)
+                merged_chunks.append(c)
+
+        for c in local_chunks:
+            txt = (c.get("content", "") or "").strip()[:80].lower()
+            if txt and txt not in seen_texts:
+                seen_texts.add(txt)
+                merged_chunks.append(c)
+
+        merged_chunks.sort(key=lambda x: float(x.get("score", x.get("similarity_score", 0.0))), reverse=True)
+        return {
+            "query": query_text,
+            "chunks": merged_chunks[:max(top_k, 3)],
+            "count": len(merged_chunks[:max(top_k, 3)]),
+            "cloud_error": cloud_error
+        }
 
     def _invoke_llm(
         self,
@@ -300,6 +360,11 @@ class SovereignNetOpsRAG:
         overlap = query_keywords.intersection(content_words)
 
         # USSD and specialized keyword synonyms mapping
+        ussd_in_q = re.findall(r"[*#]?[0-9]+#?", current_q)
+        for code in ussd_in_q:
+            if len(code) >= 3 and (code in combined_content or f"#{code}#" in combined_content):
+                return True
+
         if cls._has_any_term(current_q, ("111", "#111#")) and cls._has_any_term(combined_content, ("mcash", "m-cash", "bank account", "wallet")):
             return True
         if cls._has_any_term(current_q, ("999", "#999#")) and cls._has_any_term(combined_content, ("roaming", "idd", "country code", "rate", "minute")):
@@ -372,10 +437,10 @@ class SovereignNetOpsRAG:
 
         is_quota_or_balance_intent = asks(
             "quota", "balance", "usage", "remaining", "reamaining", "remainig", "remains",
-            "how to check", "check data", "check my", "data remaining", "data quota",
+            "check data", "check my data", "check quota", "data remaining", "data quota",
             "how much data", "data left", "check balance", "bill balance"
         ) or (
-            asks("check", "how to check", "view", "know", "see") and asks("data", "quota", "usage", "balance", "package", "plan")
+            asks("check", "how to check", "view", "know", "see") and asks("data", "quota", "usage", "balance", "package", "plan", "bill")
         )
 
         # 1AA. Instant Credit Loan (#247#) & Data Loan (#170#)
@@ -776,21 +841,64 @@ class SovereignNetOpsRAG:
             ]
             return ans, bullets
 
-        # 8. Generic grounded fallback: extract clean English text directly from the top chunk
+        # 8. Dynamic grounded extractor: extracts structured tables, steps, or bullet points directly from the chunks
+        combined_raw = "\n\n".join(c.get("content", "") for c in chunks if c.get("content"))
+
+        # 8A. Match Table Rows (e.g. any package, add-on, or plan table in the KB)
+        table_lines = [ln.strip() for ln in combined_raw.splitlines() if ln.strip().startswith("|")]
+        if len(table_lines) >= 3:
+            headers = [c.strip() for c in table_lines[0].split("|") if c.strip()]
+            rows = []
+            for line in table_lines[2:]:
+                cols = [c.strip() for c in line.split("|") if c.strip()]
+                if cols:
+                    rows.append(cols)
+            # Filter rows by query relevance
+            q_keywords = [w for w in re.findall(r"[a-zA-Z0-9]{2,}", current_q) if w not in cls.STOPWORDS]
+            matching_rows = []
+            for r in rows:
+                r_text = " ".join(r).lower()
+                if any(w in r_text for w in q_keywords if len(w) >= 3):
+                    matching_rows.append(r)
+            selected_rows = matching_rows if matching_rows else rows[:6]
+            formatted_bullets = []
+            for r in selected_rows[:6]:
+                if len(r) >= 3:
+                    formatted_bullets.append(f"**{r[0]}:** {r[1]} — {r[2]}" + (f" ({r[3]})" if len(r) > 3 else ""))
+                elif len(r) == 2:
+                    formatted_bullets.append(f"**{r[0]}:** {r[1]}")
+                else:
+                    formatted_bullets.append(" | ".join(r))
+            title = f"**{headers[0]} & Details:**" if headers else "Available packages:"
+            return title, formatted_bullets
+
+        # 8B. Match Numbered Step sequences (Step 1, Step 2, ...)
+        step_matches = re.findall(r"(?:Step\s*\d+[\s:\-–]+|\b\d+[\.\)]\s+)([^\n\r]+)", combined_raw, re.IGNORECASE)
+        clean_steps = [s.strip() for s in step_matches if len(s.strip()) > 8 and not re.search(r"application\s*form|download|bill\s*proof", s, re.I)]
+        if len(clean_steps) >= 2:
+            return "Follow these steps from the KnowledgeBase:", [f"**Step {i+1}:** {st}" for i, st in enumerate(clean_steps[:5])]
+
+        # 8C. Match Bullet Points (- Item: Details)
+        q_keywords = [w for w in re.findall(r"[a-zA-Z0-9]{2,}", current_q) if w not in cls.STOPWORDS]
+        kv_bullets = []
+        for line in combined_raw.splitlines():
+            l_str = line.strip()
+            if l_str.startswith(("-", "*", "•")):
+                clean_l = re.sub(r"^[\-\*\•]\s*", "", l_str).strip()
+                if clean_l and not clean_l.startswith("Title:") and not clean_l.startswith("Document ID:"):
+                    clean_lower = clean_l.lower()
+                    if any(w in clean_lower for w in q_keywords if len(w) >= 3):
+                        if not clean_l.startswith("**") and ":" in clean_l:
+                            p1, p2 = clean_l.split(":", 1)
+                            if len(p1) < 35:
+                                clean_l = f"**{p1.strip()}:** {p2.strip()}"
+                        kv_bullets.append(clean_l)
+        if len(kv_bullets) >= 2:
+            return "Here are the relevant details from the KnowledgeBase:", kv_bullets[:6]
+
+        # 8D. Top lines fallback
         raw_top = chunks[0].get("content", "") if chunks else ""
         raw_top = re.sub(r"^FAQ:\s*", "", raw_top, flags=re.MULTILINE)
-        numbered_matches = re.split(r"(?=\b\d+\.\s+[A-Z])", raw_top)
-        if len(numbered_matches) >= 3:
-            cleaned_steps = []
-            for m in numbered_matches:
-                s = m.strip(" ,\"'•~\n")
-                if len(s) >= 6:
-                    if not re.match(r"^\d+\.", s):
-                        s = f"• {s}"
-                    cleaned_steps.append(" ".join(s.split()))
-            if cleaned_steps:
-                return "Here are the recommended steps:", cleaned_steps[:6]
-
         lines = [ln.strip(" ,\"'•~") for ln in raw_top.splitlines() if ln.strip(" ,\"'•~")]
         if not lines:
             return "", []
