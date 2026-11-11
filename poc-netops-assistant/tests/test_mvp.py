@@ -780,6 +780,47 @@ def test_short_quota_status_keeps_router_session_context():
     assert "wlan" in final_text
 
 
+def test_successful_restart_outcome_precedes_failure_diagnostics():
+    """A solved outcome must not be answered with the still-failing branch."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+    history = []
+    router_chunk = {
+        "query": "slow internet router",
+        "chunks": [{
+            "doc_id": "KB-CHUNK-ROUTER",
+            "doc_title": "SLT Router & Broadband Troubleshooting",
+            "source_file": "aws-api-gateway:/prod/retrieve",
+            "section": "Chunk #1",
+            "content": (
+                "FAQ: Slow internet. Check data quota in MySLT App, restart router, "
+                "change Wi-Fi password, check telephone line. WLAN ON and GPON solid green."
+            ),
+            "score": 0.88,
+            "similarity_score": 0.88,
+        }],
+        "count": 1,
+    }
+
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=router_chunk):
+        for query in (
+            "my internet is slow",
+            "I checked my data quota it is not finished yet so the problem might be something else",
+            "I restarted the router and seems like the problem is solved now",
+        ):
+            result = agent.run_agent(
+                query,
+                route_mode="AUTO",
+                inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+                conversation_history=history,
+            )
+            history.append({"user_input": query, "agent_response": result})
+
+    final_answer = history[-1]["agent_response"]["answer_markdown"].lower()
+    assert "resolved" in final_answer
+    assert "already restarted" not in final_answer
+
+
 def test_checked_quota_statement_with_typo_advances_router_diagnosis():
     """A typo-heavy quota status statement is not a self-care request."""
     manuals_dir = BASE_DIR / "data" / "approved_manuals"

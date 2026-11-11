@@ -284,6 +284,7 @@ class SLTMobitelUnifiedAgent:
         fact_patterns = (
             (r"\b(?:slow|slower|speed|lagging|buffering)\b", "slow_connection"),
             (r"\b(?:restarted|rebooted|reboot)\b", "router_restarted"),
+            (r"\b(?:solved|fixed|resolved|working\s+now|works\s+now)\b", "issue_resolved"),
             (r"\b(?:plenty|enough|available|not\s+finished|not\s+exceeded)\b.*\b(?:data|quota)\b", "quota_available"),
             (r"\b(?:data|quota)\b.*\b(?:plenty|enough|available|not\s+finished|not\s+exceeded)\b", "quota_available"),
             (r"\b(?:router|device)\b.*\b(?:on|turned|powered)\b", "router_powered_on"),

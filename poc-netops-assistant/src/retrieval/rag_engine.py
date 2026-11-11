@@ -774,6 +774,19 @@ class SovereignNetOpsRAG:
                 "slow", "quota", "outlet", "connection", "telephone", "socket", "power"):
             escalate = "**Report a fault:** Call **`1212`** (Fixed/Fibre) or **`1717`** (Mobile), or log it in the **MySLT App** (`https://myslt.slt.lk/`)."
 
+            # An explicit successful outcome takes precedence over the
+            # diagnostic branch that normally handles "I restarted it".
+            if asks("solved", "fixed", "resolved", "working now", "works now") or cls._has_any_term(
+                context_part, ("issue resolved", "problem solved", "working now", "fixed")
+            ):
+                ans = "Great — restarting the router appears to have resolved the connection problem."
+                bullets = [
+                    "**1.** You can continue using the connection normally.",
+                    "**2.** If the issue returns, check the `WLAN` and `GPON` LEDs and the connected cables.",
+                    f"**3.** If it returns and persists, {escalate}"
+                ]
+                return ans, bullets
+
             # Stage: already restarted, still failing
             if asks("restarted", "rebooted", "already tried", "did that", "done that", "still slow", "still not working", "already restarted"):
                 ans = "Since you have **already restarted the router** and the problem continues, here are the next recommended checks:"
