@@ -208,6 +208,8 @@ if not hasattr(agent.rag.aws_kb_client, "cloudfront"):
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "session_memory" not in st.session_state:
+    st.session_state.session_memory = {}
 if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
 if "pending_route" not in st.session_state:
@@ -240,6 +242,7 @@ with st.sidebar:
 
     if st.button("New Conversation", use_container_width=True, type="primary"):
         st.session_state.chat_history = []
+        st.session_state.session_memory = {}
         st.session_state.pending_prompt = None
         st.session_state.pending_from_voice = False
         st.rerun()
@@ -442,6 +445,7 @@ if active_user_message:
                 inference_engine=selected_engine,
                 top_k=kb_top_k,
                 conversation_history=st.session_state.chat_history,
+                session_memory=st.session_state.session_memory,
                 bedrock_model=bedrock_model_input
             )
             turn_res["from_voice_input"] = is_voice_turn
@@ -459,4 +463,8 @@ if active_user_message:
                 "user_input": active_user_message,
                 "agent_response": turn_res
             })
+            st.session_state.session_memory = turn_res.get(
+                "session_memory",
+                st.session_state.session_memory,
+            )
             st.rerun()

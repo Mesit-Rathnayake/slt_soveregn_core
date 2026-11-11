@@ -242,6 +242,67 @@ class SLTMobitelUnifiedAgent:
                     return True
         return False
 
+    @classmethod
+    def _update_session_memory(
+        cls,
+        user_input: str,
+        previous_memory: dict | None = None,
+    ) -> dict:
+        """Build a bounded topic/fact memory without retaining the transcript."""
+        memory = {
+            "active_topic": (previous_memory or {}).get("active_topic", ""),
+            "route": (previous_memory or {}).get("route", ""),
+            "facts": list((previous_memory or {}).get("facts", []))[-8:],
+        }
+        text = user_input.lower()
+        tokens = set(re.findall(r"[a-z0-9#*]+", text))
+        product_topic = bool(tokens.intersection({
+            "loan", "borrow", "247", "170", "1456", "888", "111", "999", "ussd"
+        }))
+        router_topic = bool(tokens.intersection({
+            "router", "internet", "wifi", "wlan", "gpon", "slow", "speed",
+            "connection", "connectivity", "restarted", "reboot", "cable", "cables"
+        }))
+        if product_topic and not router_topic:
+            memory["active_topic"] = "customer_product_support"
+            memory["route"] = "AWS_CLOUD_KB"
+            memory["facts"] = []
+        elif router_topic:
+            memory["active_topic"] = "router_troubleshooting"
+            memory["route"] = "AWS_CLOUD_KB"
+
+        fact_patterns = (
+            (r"\b(?:slow|slower|speed|lagging|buffering)\b", "slow_connection"),
+            (r"\b(?:restarted|rebooted|reboot)\b", "router_restarted"),
+            (r"\b(?:plenty|enough|available|not\s+finished|not\s+exceeded)\b.*\b(?:data|quota)\b", "quota_available"),
+            (r"\b(?:data|quota)\b.*\b(?:plenty|enough|available|not\s+finished|not\s+exceeded)\b", "quota_available"),
+            (r"\b(?:router|device)\b.*\b(?:on|turned|powered)\b", "router_powered_on"),
+            (r"\b(?:socket|outlet)\b.*\b(?:fine|working|good|okay|ok)\b", "power_socket_checked"),
+        )
+        for pattern, fact in fact_patterns:
+            if re.search(pattern, text):
+                memory["facts"] = [f for f in memory["facts"] if f != fact]
+                memory["facts"].append(fact)
+        return memory
+
+    @classmethod
+    def _session_memory_context(cls, memory: dict) -> str:
+        topic = memory.get("active_topic", "")
+        facts = memory.get("facts", [])
+        if not topic and not facts:
+            return ""
+        fact_text = ", ".join(f.replace("_", " ") for f in facts) if facts else "none recorded"
+        topic_text = (topic or "unknown").replace("_", " ")
+        return f"Session topic: {topic_text}; verified facts: {fact_text}"
+
+    @classmethod
+    def _has_router_memory_signal(cls, text: str) -> bool:
+        tokens = set(re.findall(r"[a-z0-9#*]+", text.lower()))
+        return bool(tokens.intersection(
+            cls.TROUBLESHOOT_FOLLOWUP_TERMS
+            | {"quota", "data", "remaining", "plenty", "enough", "available"}
+        ))
+
     def run_agent(
         self,
         user_input: str,
@@ -256,7 +317,8 @@ class SLTMobitelUnifiedAgent:
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
         kb_secret_override: str | None = None,
-        kb_endpoint_override: str | None = None
+        kb_endpoint_override: str | None = None,
+        session_memory: dict | None = None
     ) -> dict:
         t0 = time.perf_counter()
         trace_steps = []
@@ -338,21 +400,44 @@ class SLTMobitelUnifiedAgent:
         san_res = mcp_san["structuredContent"]
         clean_user_input = san_res["sanitized_text"]
         redactions = san_res["redactions_applied"]
+        recovered_memory = session_memory or {}
+        if not session_memory and conversation_history:
+            for turn in conversation_history[-8:]:
+                recovered_memory = self._update_session_memory(
+                    turn.get("agent_response", {}).get("sanitized_text")
+                    or turn.get("user_input", ""),
+                    recovered_memory,
+                )
+        has_prior_memory = bool(
+            recovered_memory.get("active_topic") or recovered_memory.get("facts")
+        )
+        active_memory = self._update_session_memory(clean_user_input, recovered_memory)
         trace_steps.append(
             f"Step 1 (MCP Tool `slt_sanitize_pii`): Masked `{redactions}` sensitive PII/IP/credential fields."
         )
 
         # Build conversational context window ONLY if the user is genuinely referring to the previous turn
         clean_text = clean_user_input
-        if conversation_history:
-            last_turn = conversation_history[-1]
+        if conversation_history or active_memory.get("active_topic"):
+            last_turn = conversation_history[-1] if conversation_history else {}
             last_route = last_turn.get("agent_response", {}).get("intent_route", "")
             prev_sanitized = last_turn.get("agent_response", {}).get("sanitized_text") or last_turn.get("user_input", "")
-            if self._is_true_followup_question(clean_user_input, prev_route=last_route, prev_text=prev_sanitized):
-                if prev_sanitized:
-                    prev_flat = re.sub(r"\(Context:\s*([^)]+)\)", r"- \1", prev_sanitized).strip()
-                    clean_text = f"{clean_user_input} (Context: {prev_flat[:160]})"
-                    trace_steps.append("💬 **Conversational Memory:** Linked follow-up with sanitized previous turn.")
+            previous_text = prev_sanitized if conversation_history else ""
+            followup = self._is_true_followup_question(
+                clean_user_input,
+                prev_route=last_route,
+                prev_text=previous_text,
+            )
+            if has_prior_memory and active_memory.get("active_topic") == "router_troubleshooting":
+                followup = followup or bool(
+                    self._update_session_memory(clean_user_input, active_memory).get("facts")
+                    and self._has_router_memory_signal(clean_user_input)
+                )
+            if followup:
+                context = self._session_memory_context(active_memory)
+                if context:
+                    clean_text = f"{clean_user_input} (Context: {context})"
+                    trace_steps.append("💬 **Session Memory:** Linked the active topic and verified facts.")
 
         # Step 2: Input Guardrails
         in_guard = self.guardrails.evaluate_input_guardrails(user_input, clean_text, redactions)
@@ -478,10 +563,24 @@ class SLTMobitelUnifiedAgent:
                     t.get("agent_response", {}).get("answer_markdown", "").strip()
                     for t in conversation_history[-2:]
                 }
+                normalized_current_input = re.sub(
+                    r"[^a-z0-9]+", " ", clean_user_input.lower()
+                ).strip()
+                repeated_user_input = any(
+                    re.sub(
+                        r"[^a-z0-9]+", " ",
+                        (t.get("user_input") or "").lower()
+                    ).strip() == normalized_current_input
+                    for t in conversation_history[-2:]
+                )
                 # Only escalate repeated *troubleshooting* answers; repeated factual answers (loans, USSD, packages) stay as-is
                 ans_l = rep["answer"].strip().lower()
                 is_troubleshooting_answer = any(k in ans_l for k in ("troubleshoot", "router", "wi-fi", "connection"))
-                if is_troubleshooting_answer and rep["answer"].strip() in recent_answers:
+                if (
+                    repeated_user_input
+                    and is_troubleshooting_answer
+                    and rep["answer"].strip() in recent_answers
+                ):
                     rep["has_enough_knowledge"] = True
                     rep["answer"] = (
                         "Since you have already checked those initial steps, here are the **remaining verification "
@@ -551,7 +650,8 @@ class SLTMobitelUnifiedAgent:
             "trace_steps": trace_steps,
             "latency_ms": round(latency_ms, 1),
             "warnings": warnings_list,
-            "suggested_followups": suggested_followups
+            "suggested_followups": suggested_followups,
+            "session_memory": active_memory
         }
 
     def run_evaluation_benchmark(

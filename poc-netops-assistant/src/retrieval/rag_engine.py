@@ -807,7 +807,10 @@ class SovereignNetOpsRAG:
                 asks("speed") and asks("low", "bad", "poor", "drop", "issue", "down", "slower", "slowly", "problem", "usual")
             ) or asks("slower than", "speed is slow", "speed is slower"):
                 if cls._has_any_term(context_part, ("slow", "slower", "slowly", "speed", "lagging")):
-                    ans = "If your **internet speed is still low** after the basic steps, check these next:"
+                    if asks("speed"):
+                        ans = "For your **very low internet speed**, continue with these next checks:"
+                    else:
+                        ans = "If your **internet speed is still low** and the connection remains **slow**, check these next:"
                     bullets = [
                         "**1. Detailed usage report:** MySLT App → Internet → Data Remaining → More → **Enable Detailed Reports**, to see whether your quota has been used up.",
                         "**2. Flash package limit:** On *Unlimited LTE Flash 5 / 10*, speed drops to `1 Mbps` after `5 GB` / `10 GB` per day (free unlimited `12 midnight – 7 AM`). Extra GB can be added via the **MySLT App**.",
@@ -833,6 +836,15 @@ class SovereignNetOpsRAG:
             ) or (
                 asks("router", "device", "it", "power") and asks("turned on", "powered on", "switched on", "is on")
             ):
+                if cls._has_any_term(context_part, ("router powered on", "router turned on")):
+                    ans = "Since the router is powered on, continue with the **remaining verification** checks:"
+                    bullets = [
+                        "**1. `WLAN` & `GPON` LEDs:** Confirm `WLAN` is ON and `GPON` is solid green.",
+                        "**2. Check the telephone/Fibre and Ethernet cables** are tightly connected.",
+                        "**3. Change your Wi-Fi password** if unknown devices may be using the connection.",
+                        f"**4.** {escalate}"
+                    ]
+                    return ans, bullets
                 if cls._has_any_term(context_part, ("slow", "slower", "slowly", "speed", "lagging")):
                     ans = "With the **router powered on**, check these next steps to resolve the slow connection:"
                     bullets = [
@@ -843,7 +855,7 @@ class SovereignNetOpsRAG:
                     ]
                     return ans, bullets
 
-                ans = "If your **router is powered on but there is no internet connection**, check the following:"
+                ans = "With the **router powered on** but no internet connection, check the following:"
                 bullets = [
                     "**1. `WLAN` LED:** It should be ON. If it is OFF, press the **Wi-Fi / WLAN** button on the router.",
                     "**2. `GPON` LED:** Solid green means the optical link to SLT is normal. If it is not solid green, the line needs checking by SLT.",
