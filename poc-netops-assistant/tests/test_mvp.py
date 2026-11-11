@@ -740,3 +740,47 @@ def test_quota_statement_advances_active_router_troubleshooting():
     assert "wlan" in final_answer
 
 
+def test_checked_quota_statement_with_typo_advances_router_diagnosis():
+    """A typo-heavy quota status statement is not a self-care request."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+    history = []
+    troubleshooting_kb = {
+        "query": "router internet troubleshooting",
+        "chunks": [{
+            "doc_id": "KB-CHUNK-ROUTER",
+            "doc_title": "SLT Router & Broadband Troubleshooting",
+            "source_file": "aws-api-gateway:/prod/retrieve",
+            "section": "Chunk #1",
+            "content": (
+                "FAQ: How to troubleshoot slow internet? Check data quota in MySLT App. "
+                "Restart router. Change Wi-Fi password. Check telephone line. "
+                "WLAN should be ON and GPON should be solid green."
+            ),
+            "score": 0.88,
+            "similarity_score": 0.88,
+        }],
+        "count": 1,
+    }
+
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=troubleshooting_kb):
+        for query in (
+            "my internet is slow",
+            "I still have plenty of data remaining in my data quote",
+            "I chek=cked my data quote and its not finished yet",
+        ):
+            result = agent.run_agent(
+                query,
+                route_mode="AUTO",
+                inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+                conversation_history=history,
+            )
+            history.append({"user_input": query, "agent_response": result})
+
+    final_response = history[-1]["agent_response"]
+    final_text = (
+        final_response["answer_markdown"] + " " + " ".join(final_response["key_points"])
+    ).lower()
+    assert "remaining data quota and balance" not in final_text
+    assert "wlan" in final_text
+

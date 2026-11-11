@@ -448,8 +448,16 @@ class SovereignNetOpsRAG:
         ) or (
             asks("check", "how to check", "view", "know", "see") and asks("data", "quota", "usage", "balance", "package", "plan", "bill")
         )
+        requests_quota_check = bool(
+            re.search(
+                r"\b(?:how|where|can|could|please|show|tell)\b.*\b(?:check|view|see|know|remaining|balance|quota)\b",
+                current_q,
+                re.IGNORECASE,
+            )
+            or re.match(r"\s*(?:check|view|see|show)\b", current_q, re.IGNORECASE)
+        )
         explicit_quota_check = (
-            asks("check", "how to check", "view", "know", "see", "how much")
+            requests_quota_check
             and asks("data", "quota", "usage", "balance", "remaining", "data left")
         )
         troubleshooting_context = cls._has_any_term(
