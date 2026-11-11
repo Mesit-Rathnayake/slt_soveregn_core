@@ -283,6 +283,16 @@ def test_credit_loan_and_ussd_code_inquiries():
         kps_170 = " ".join(res_170["key_points"])
         assert "Remaining Data Balance" in kps_170 or "#170#" in kps_170
 
+    # 4. Repeated factual loan answers across turns must NOT be swapped for router troubleshooting steps
+    with patch.object(agent.rag, "retrieve_from_aws_kb", return_value=credit_loan_kb):
+        history = []
+        for q in ("How to take a loan", "How to get a smart loan", "How can I borrow credit"):
+            r = agent.run_agent(q, route_mode="AUTO", inference_engine="LOCAL_GROUNDED_RULE_ENGINE", conversation_history=history)
+            assert r["has_enough_knowledge"] is True, q
+            assert "#247#" in r["answer_markdown"], q
+            assert "router" not in (r["answer_markdown"] + " ".join(r["key_points"])).lower(), q
+            history.append({"user_input": q, "agent_response": r})
+
 
 def test_guardrails_block_prompt_injection_and_score_evals():
     manuals_dir = BASE_DIR / "data" / "approved_manuals"

@@ -458,7 +458,10 @@ class SLTMobitelUnifiedAgent:
                     t.get("agent_response", {}).get("answer_markdown", "").strip()
                     for t in conversation_history[-2:]
                 }
-                if rep["answer"].strip() in recent_answers:
+                # Only escalate repeated *troubleshooting* answers; repeated factual answers (loans, USSD, packages) stay as-is
+                ans_l = rep["answer"].strip().lower()
+                is_troubleshooting_answer = any(k in ans_l for k in ("troubleshoot", "router", "wi-fi", "connection"))
+                if is_troubleshooting_answer and rep["answer"].strip() in recent_answers:
                     rep["has_enough_knowledge"] = True
                     rep["answer"] = (
                         "Since you have already checked those initial steps, here are the **remaining verification "
