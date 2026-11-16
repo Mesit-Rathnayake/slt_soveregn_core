@@ -259,6 +259,75 @@ class SLTMobitelUnifiedAgent:
                     return True
         return False
 
+    PRODUCT_ENTITIES = {
+        "credit_loan": {
+            "patterns": [r"\bcredit\s+loan\b", r"\b#?247#?\b", r"\binstant\s+loan\b", r"\bsmart\s+loan\b", r"\bborrow\s+credit\b"],
+            "name": "Instant Credit Loan (#247#)",
+            "keywords": "Instant Credit Loan #247# borrow outgoing calls sms vas repayment validity"
+        },
+        "data_loan": {
+            "patterns": [r"\bdata\s+loan\b", r"\b#?170#?\b", r"\bemergency\s+data\b", r"\bborrow\s+data\b"],
+            "name": "Data Loan (#170#)",
+            "keywords": "Data Loan #170# emergency data bundle balance DB to 7678"
+        },
+        "peotv": {
+            "patterns": [r"\bpeotv\b", r"\bpeo\b", r"\bchannels?\b", r"\btelevision\b", r"\btitanium\b", r"\bhd\s+plus\b", r"\bplatinum\b", r"\bgold\b", r"\buthayam\b"],
+            "name": "PEOTV",
+            "keywords": "PEOTV packages channels monthly rental HD Plus Titanium Platinum Gold Bronze"
+        },
+        "fibre": {
+            "patterns": [r"\bfibre\b", r"\bfiber\b", r"\bftth\b", r"\btrio\s+vibe\b", r"\bunlimited\s+home\b", r"\bultra\s+prime\b", r"\bstarter\b"],
+            "name": "Fibre FTTH Broadband",
+            "keywords": "Fibre FTTH broadband packages Fiber Starter Unlimited Home rental speed"
+        },
+        "lte": {
+            "patterns": [r"\b4g\b", r"\blte\b", r"\banytime\b", r"\bhbb\b", r"\bflash\s*5\b", r"\bflash\s*10\b"],
+            "name": "4G LTE Home Broadband",
+            "keywords": "4G LTE broadband anytime volume flash packages"
+        },
+        "addons": {
+            "patterns": [r"\badd-?ons?\b", r"\bextra\s+gb\b", r"\byoutube\b", r"\bmessenger\b", r"\bgamer\b", r"\blms\b", r"\bstreamer\b"],
+            "name": "Data Add-ons",
+            "keywords": "data add-ons extra gb YouTube Messenger Gamer LMS"
+        },
+        "esim": {
+            "patterns": [r"\besim\b", r"\be-sim\b", r"\beid\b", r"\*#06#", r"\b06#\b"],
+            "name": "eSIM",
+            "keywords": "eSIM compatibility EID number check *#06#"
+        },
+        "mcash": {
+            "patterns": [r"\bmcash\b", r"\bm-cash\b", r"\b#?111#?\b"],
+            "name": "mCash (#111#)",
+            "keywords": "mCash #111# mobile money bank account"
+        },
+        "roaming": {
+            "patterns": [r"\broaming\b", r"\bidd\b", r"\b#?999#?\b"],
+            "name": "International Roaming (#999#)",
+            "keywords": "international roaming idd #999#"
+        }
+    }
+
+    @classmethod
+    def _condense_followup_query(cls, user_input: str, active_entity_key: str | None) -> str:
+        if not active_entity_key or active_entity_key not in cls.PRODUCT_ENTITIES:
+            return user_input
+        meta = cls.PRODUCT_ENTITIES[active_entity_key]
+        inp_lower = user_input.lower()
+        followup_signals = [
+            "it", "that", "this", "those", "them", "repay", "pay", "validity", "period", "how much",
+            "what about", "how about", "cost", "price", "charge", "fee", "activate", "get", "take",
+            "option", "tier", "channels", "speed", "eligibility", "terms"
+        ]
+        if any(re.search(r"\b" + re.escape(sig) + r"\b", inp_lower) for sig in followup_signals):
+            if re.search(r"\b(?:repay|pay\s+back|recover|settle)\b", inp_lower):
+                return f"{user_input} {meta['name']} repayment automatic recovery recharge"
+            if re.search(r"\b(?:validity|period|days|expires?|how\s+long)\b", inp_lower):
+                return f"{user_input} {meta['name']} validity days expiration tenure"
+            if re.search(r"\b(?:cost|price|rental|charge|fee|how\s+much|\d+\s*(?:rupees?|rs))\b", inp_lower):
+                return f"{user_input} {meta['name']} price rental charge tiers"
+            return f"{user_input} {meta['keywords']}"
+        return user_input
+
     @classmethod
     def _update_session_memory(
         cls,
@@ -268,12 +337,23 @@ class SLTMobitelUnifiedAgent:
         """Build a bounded topic/fact memory without retaining the transcript."""
         memory = {
             "active_topic": (previous_memory or {}).get("active_topic", ""),
+            "active_entity": (previous_memory or {}).get("active_entity", ""),
             "route": (previous_memory or {}).get("route", ""),
             "facts": list((previous_memory or {}).get("facts", []))[-8:],
         }
         text = user_input.lower()
+        if any(re.search(pat, text) for pat in SovereignNetOpsRAG.OUT_OF_DOMAIN_PATTERNS):
+            return memory
         tokens = set(re.findall(r"[a-z0-9#*]+", text))
-        product_topic = bool(tokens.intersection({
+
+        # Detect active product entity
+        detected_entity = None
+        for ent_key, meta in cls.PRODUCT_ENTITIES.items():
+            if any(re.search(pat, text) for pat in meta["patterns"]):
+                detected_entity = ent_key
+                break
+
+        product_topic = bool(detected_entity) or bool(tokens.intersection({
             "loan", "borrow", "247", "170", "1456", "888", "111", "999", "ussd"
         }))
         router_topic = bool(tokens.intersection({
@@ -282,10 +362,13 @@ class SLTMobitelUnifiedAgent:
         }))
         if product_topic and not router_topic:
             memory["active_topic"] = "customer_product_support"
+            if detected_entity:
+                memory["active_entity"] = detected_entity
             memory["route"] = "AWS_CLOUD_KB"
             memory["facts"] = []
         elif router_topic:
             memory["active_topic"] = "router_troubleshooting"
+            memory["active_entity"] = "router_troubleshooting"
             memory["route"] = "AWS_CLOUD_KB"
 
         fact_patterns = (
@@ -499,6 +582,13 @@ class SLTMobitelUnifiedAgent:
                 if context:
                     clean_text = f"{clean_user_input} (Context: {context}; Stage: {troubleshooting_stage})"
                     trace_steps.append("💬 **Session Memory:** Linked the active topic and verified facts.")
+
+                # Condense product/service follow-up query if not already a router troubleshooting stage
+                if not retrieval_query and active_memory.get("active_entity"):
+                    condensed = self._condense_followup_query(clean_user_input, active_memory.get("active_entity"))
+                    if condensed != clean_user_input:
+                        retrieval_query = condensed
+                        trace_steps.append(f"🔗 **Query Condensation:** Resolved follow-up context to `{condensed}`.")
 
         # Step 2: Input Guardrails
         in_guard = self.guardrails.evaluate_input_guardrails(user_input, clean_text, redactions)

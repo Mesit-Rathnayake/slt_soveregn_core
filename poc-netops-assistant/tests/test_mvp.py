@@ -945,3 +945,70 @@ def test_checked_quota_statement_with_typo_advances_router_diagnosis():
     ).lower()
     assert "remaining data quota and balance" not in final_text
     assert "wlan" in final_text
+
+
+def test_multi_turn_product_query_condensation():
+    """
+    Verifies that multi-turn product follow-up queries using pronouns or elliptical phrasing
+    (e.g., 'How do I repay it?', 'Is there any validity period for that?', 'How much is Titanium?')
+    retain the active product entity context via query condensation.
+    """
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    # 1. Loan repayment & validity follow-ups
+    history = []
+    res1 = agent.run_agent(
+        "How to take a credit loan",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=history
+    )
+    assert res1["has_enough_knowledge"] is True
+    assert "#247#" in res1["answer_markdown"]
+    history.append({"user_input": "How to take a credit loan", "agent_response": res1})
+
+    res2 = agent.run_agent(
+        "How do I repay it?",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=history
+    )
+    assert res2["has_enough_knowledge"] is True
+    assert "repay" in res2["answer_markdown"].lower()
+    assert "recharge" in " ".join(res2["key_points"]).lower()
+    history.append({"user_input": "How do I repay it?", "agent_response": res2})
+
+    res3 = agent.run_agent(
+        "Is there any validity period for that?",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=history
+    )
+    assert res3["has_enough_knowledge"] is True
+    assert "validity" in res3["answer_markdown"].lower()
+    assert "days" in " ".join(res3["key_points"]).lower()
+
+    # 2. PEOTV follow-up
+    peo_history = []
+    peo_res1 = agent.run_agent(
+        "What are the PEOTV packages",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=peo_history
+    )
+    assert peo_res1["has_enough_knowledge"] is True
+    assert "peotv" in peo_res1["answer_markdown"].lower()
+    peo_history.append({"user_input": "What are the PEOTV packages", "agent_response": peo_res1})
+
+    peo_res2 = agent.run_agent(
+        "How much is Titanium?",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=peo_history
+    )
+    assert peo_res2["has_enough_knowledge"] is True
+    assert "peotv" in peo_res2["answer_markdown"].lower()
+    assert "titanium" in " ".join(peo_res2["key_points"]).lower()
+    assert "2,940" in " ".join(peo_res2["key_points"])
+

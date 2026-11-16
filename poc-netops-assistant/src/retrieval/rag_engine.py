@@ -264,6 +264,10 @@ class SovereignNetOpsRAG:
             return "balanc"
         if w in ("usage", "usages"):
             return "usage"
+        if w.startswith("repay"):
+            return "repay"
+        if w in ("validity", "valid"):
+            return "valid"
         if w.startswith("activ"):
             return "activ"
         if w.startswith("packag"):
@@ -477,7 +481,7 @@ class SovereignNetOpsRAG:
         # 1AA. Instant Credit Loan (#247#) & Data Loan (#170#)
         if asks(
             "loan", "data loan", "credit loan", "instant loan", "smart loan", "cash loan", "voice loan",
-            "borrow", "borrow data", "emergency data", "247"
+            "borrow", "borrow data", "emergency data", "247", "repay", "recovery", "validity", "tenure"
         ) and grounded(
             "loan", "247", "170", "7678", "recharge", "repay", "data loan", "recovery", "tenure", "outgoing"
         ):
@@ -491,6 +495,28 @@ class SovereignNetOpsRAG:
             is_credit_loan = is_contrastive_credit_loan or explicit_credit_loan or (
                 grounded("247", "outgoing") and not asks("data loan", "borrow data", "emergency data", "170")
             )
+            # If asking how to repay a loan (Credit Loan or Data Loan)
+            if asks("repay", "re-pay", "recover", "recovery", "settle", "pay back"):
+                loan_type = "Credit Loan" if (asks("credit", "247") or (grounded("247") and not asks("data", "170"))) else "Data Loan"
+                ans = f"How **{loan_type} repayment** works:"
+                bullets = [
+                    "**Automatic recovery upon recharge:** The loan amount + service charge is automatically recovered (deducted) when you perform your next mobile recharge.",
+                    "**Full recovery:** If your recharge amount is sufficient, the total loan and service fee are deducted entirely.",
+                    "**Partial recovery:** If your recharge amount is insufficient, a partial deduction is made, and the remaining balance is recovered on your next recharge."
+                ]
+                return ans, bullets
+
+            # If asking about validity periods specifically
+            if asks("validity", "period", "tenure", "how long") and not asks("how to take", "how to get", "activate", "borrow"):
+                ans = "Here are the **validity periods** for Mobitel loans:"
+                bullets = [
+                    "**Rs. 25 Credit Loan (`#247#25#`):** Validity: **5 days** (Eligibility: > 3 months on network).",
+                    "**Rs. 40, 50, 75, 90, 100 Credit Loans (`#247#`):** Validity: **7 days**.",
+                    "**Data Loan (`#170#`):** Rs. 36 (3 days), Rs. 58 (7 days), Rs. 118 & Rs. 159 (14 days).",
+                    "**Repayment:** Automatically recovered on next mobile recharge."
+                ]
+                return ans, bullets
+
             if is_credit_loan:
                 if asks("247") and not asks("how to take", "how to get", "get", "take", "activate", "obtain", "borrow", "loan"):
                     ans = "**`#247#`** is the **Instant Credit Loan** USSD code (usable for local outgoing calls, local SMS, internet browsing, and Value-Added Services):"
@@ -1011,9 +1037,10 @@ class SovereignNetOpsRAG:
         """
         active_mode = mode_override or self.inference_mode
         kb_error = None
+        eval_query = retrieval_query or sanitized_query
         try:
             kb_response = self.retrieve_from_aws_kb(
-                query_text=retrieval_query or sanitized_query,
+                query_text=eval_query,
                 top_k=top_k,
                 kb_secret_override=kb_secret_override,
                 kb_endpoint_override=kb_endpoint_override
@@ -1027,7 +1054,12 @@ class SovereignNetOpsRAG:
         llm_error_note = None
 
         # Check if the retrieved chunks actually have enough knowledge to answer the query
-        has_relevant_knowledge = self._chunks_are_relevant_to_query(sanitized_query, chunks)
+        if any(re.search(pat, sanitized_query.lower()) for pat in self.OUT_OF_DOMAIN_PATTERNS):
+            has_relevant_knowledge = False
+        else:
+            has_relevant_knowledge = self._chunks_are_relevant_to_query(sanitized_query, chunks) or (
+                bool(retrieval_query) and self._chunks_are_relevant_to_query(retrieval_query, chunks)
+            )
 
         if not chunks or not has_relevant_knowledge:
             polite_abstention = "I don't have enough knowledge to answer that question."
