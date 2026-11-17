@@ -1012,3 +1012,100 @@ def test_multi_turn_product_query_condensation():
     assert "titanium" in " ".join(peo_res2["key_points"]).lower()
     assert "2,940" in " ".join(peo_res2["key_points"])
 
+
+def test_slt_filter_packages_mcp_tool_direct_and_jsonrpc():
+    """Verifies the structured package catalog filter MCP tool via direct Python calls and JSON-RPC 2.0."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    mcp = SLTMCPToolServer(manuals_dir=manuals_dir)
+
+    # 1. Verify slt_filter_packages is registered in tools/list
+    tools = mcp.list_tools()
+    tool_map = {t["name"]: t for t in tools}
+    assert "slt_filter_packages" in tool_map
+    assert "category" in tool_map["slt_filter_packages"]["inputSchema"]["properties"]
+    assert "max_price" in tool_map["slt_filter_packages"]["inputSchema"]["properties"]
+
+    # 2. Direct tool call: Fibre packages under Rs. 5,000
+    res = mcp.call_tool("slt_filter_packages", {"category": "fibre", "max_price": 5000})
+    assert res["isError"] is False
+    sc = res["structuredContent"]
+    assert sc["count"] >= 2
+    for p in sc["matched_packages"]:
+        assert p["category"] == "fibre"
+        assert p["price_rs"] <= 5000
+    names = [p["name"] for p in sc["matched_packages"]]
+    assert "Fiber Starter" in names
+
+    # 3. Direct tool call: High-speed packages (>= 500 Mbps)
+    speed_res = mcp.call_tool("slt_filter_packages", {"category": "fibre", "min_speed_mbps": 500})
+    assert speed_res["isError"] is False
+    assert speed_res["structuredContent"]["count"] >= 2
+    for p in speed_res["structuredContent"]["matched_packages"]:
+        assert p["speed_mbps"] >= 500
+
+    # 4. MCP JSON-RPC 2.0 call
+    rpc_res = mcp.handle_jsonrpc_request({
+        "jsonrpc": "2.0",
+        "id": 99,
+        "method": "tools/call",
+        "params": {
+            "name": "slt_filter_packages",
+            "arguments": {"category": "peotv", "max_price": 2000}
+        }
+    })
+    assert rpc_res["jsonrpc"] == "2.0"
+    assert rpc_res["id"] == 99
+    assert rpc_res["result"]["isError"] is False
+    assert rpc_res["result"]["structuredContent"]["count"] >= 1
+
+
+def test_slt_filter_packages_orchestrator_routing_and_multiturn():
+    """Verifies that the agent orchestrator routes budget and speed queries to slt_filter_packages."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    # 1. Budget query: What Fibre packages are under Rs. 5,000?
+    res1 = agent.run_agent("What Fibre packages are under Rs. 5,000?", route_mode="AUTO")
+    assert res1["mcp_tool_called"] == "slt_filter_packages"
+    assert res1["inference_mode"] == "STRUCTURED_PACKAGE_FILTER"
+    assert res1["has_enough_knowledge"] is True
+    assert "Fiber Starter" in res1["answer_markdown"]
+    assert "Rs. 2,690" in res1["answer_markdown"]
+    assert len(res1["key_points"]) >= 2
+    assert res1["citations"] == ["slt_customer_kb_catalog.md (Verified Product Catalog)"]
+
+    # 2. Speed query: Show me packages with at least 500 Mbps
+    res2 = agent.run_agent("Show me packages with at least 500 Mbps", route_mode="AUTO")
+    assert res2["mcp_tool_called"] == "slt_filter_packages"
+    assert res2["has_enough_knowledge"] is True
+    assert any(str(speed) in res2["answer_markdown"] for speed in [500, 1000])
+
+    # 3. Multi-turn context preservation: "Tell me about SLT Fibre" -> "What packages are under 4000?"
+    history = []
+    f_res1 = agent.run_agent(
+        "Tell me about SLT Fibre",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=history
+    )
+    assert f_res1["has_enough_knowledge"] is True
+    history.append({"user_input": "Tell me about SLT Fibre", "agent_response": f_res1})
+
+    f_res2 = agent.run_agent(
+        "What packages are under 4000?",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=history
+    )
+    assert f_res2["mcp_tool_called"] == "slt_filter_packages"
+    assert f_res2["has_enough_knowledge"] is True
+    assert "Fiber Starter" in f_res2["answer_markdown"]
+    assert "Rs. 2,690" in f_res2["answer_markdown"]
+
+    # 4. Out of domain guard: "What is the speed of light?" must NOT route to package filter
+    ood_res = agent.run_agent("What is the speed of light?", route_mode="AUTO")
+    assert ood_res["mcp_tool_called"] != "slt_filter_packages"
+    assert ood_res["has_enough_knowledge"] is False
+    assert "don't have enough knowledge" in ood_res["answer_markdown"].lower()
+
+

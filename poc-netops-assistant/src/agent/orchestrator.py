@@ -414,6 +414,116 @@ class SLTMobitelUnifiedAgent:
         ))
 
     @classmethod
+    def _parse_package_filter_query(cls, query: str, active_entity: str | None = None) -> dict | None:
+        """
+        Detects structured budget, speed, or plan comparison filtering intent.
+        Returns a dict of parameters for `slt_filter_packages` or None if this is a standard KB query.
+        """
+        q_lower = query.lower().strip()
+        # 1. Out of domain guard (e.g. speed of light, price of gold)
+        if any(re.search(pat, q_lower) for pat in SovereignNetOpsRAG.OUT_OF_DOMAIN_PATTERNS):
+            return None
+
+        # 2. Check for filter criteria: price constraints, speed constraints, or 'cheapest'
+        max_price = None
+        min_price = None
+        min_speed_mbps = None
+        is_unlimited = None
+        is_cheapest = False
+
+        # Max price patterns: "under 5000", "below Rs. 3,000", "less than 4000", "up to 5000", "max 6000", "within 5000"
+        m_max = re.search(
+            r"(?:under|below|less\s+than|up\s+to|within|cheaper\s+than|maximum|max)\s*(?:rs\.?|lkr)?\s*([0-9,]+(?:\.[0-9]+)?)",
+            q_lower
+        )
+        if m_max:
+            try:
+                max_price = float(m_max.group(1).replace(",", ""))
+            except ValueError:
+                pass
+        else:
+            m_max2 = re.search(r"(?:rs\.?|lkr)?\s*([0-9,]+(?:\.[0-9]+)?)\s*(?:budget|or\s+less|or\s+below|max)", q_lower)
+            if m_max2:
+                try:
+                    max_price = float(m_max2.group(1).replace(",", ""))
+                except ValueError:
+                    pass
+
+        # Min price patterns: "above 2000", "over 3000", "more than 1500", "greater than 2000", "starting from 1000", "minimum 1000"
+        m_min = re.search(
+            r"(?:above|over|more\s+than|greater\s+than|starting\s+from|from|minimum|min)\s*(?:rs\.?|lkr)?\s*([0-9,]+(?:\.[0-9]+)?)",
+            q_lower
+        )
+        if m_min:
+            try:
+                min_price = float(m_min.group(1).replace(",", ""))
+            except ValueError:
+                pass
+
+        # Cheapest / lowest price
+        if any(w in q_lower for w in ("cheapest", "lowest price", "most affordable", "lowest cost")):
+            is_cheapest = True
+
+        # Speed patterns: ">= 500 mbps", "at least 100 mbps", "minimum 300 mbps", "over 100 mbps", "500 mbps"
+        m_speed = re.search(
+            r"(?:>=|at\s+least|minimum|min|over|above|faster\s+than)?\s*([0-9]+)\s*mbps",
+            q_lower
+        )
+        if m_speed and any(term in q_lower for term in (">=", "at least", "minimum", "min", "over", "above", "faster", "speed", "package", "packages", "plan")):
+            try:
+                min_speed_mbps = int(m_speed.group(1))
+            except ValueError:
+                pass
+
+        # Unlimited
+        if re.search(r"\bunlimited\b", q_lower):
+            is_unlimited = True
+
+        # Check if any filter condition was detected
+        has_filter_condition = (
+            max_price is not None
+            or min_price is not None
+            or min_speed_mbps is not None
+            or is_cheapest
+            or (is_unlimited and any(w in q_lower for w in ("package", "packages", "plan", "plans", "filter", "show", "list", "options")))
+        )
+
+        if not has_filter_condition:
+            return None
+
+        # Category detection
+        category = "all"
+        if re.search(r"\b(?:fibre|fiber|ftth)\b", q_lower):
+            category = "fibre"
+        elif re.search(r"\b(?:4g|lte)\b", q_lower):
+            category = "lte"
+        elif re.search(r"\b(?:peotv|peo\s*tv|tv)\b", q_lower):
+            category = "peotv"
+        elif re.search(r"\b(?:add-?ons?|extra\s+data)\b", q_lower):
+            category = "addons"
+        elif active_entity in ("fibre", "lte", "peotv", "addons"):
+            category = active_entity
+
+        # Search term (specific keywords like "flash", "gamer", "streamer", "youtube")
+        search_term = None
+        for term in ("flash", "gamer", "streamer", "youtube", "web", "boost", "hero", "turbo"):
+            if re.search(rf"\b{term}\b", q_lower):
+                search_term = term
+                break
+
+        limit = 1 if is_cheapest else 6
+
+        return {
+            "category": category,
+            "max_price": max_price,
+            "min_price": min_price,
+            "min_speed_mbps": min_speed_mbps,
+            "is_unlimited": is_unlimited,
+            "search_term": search_term,
+            "limit": limit
+        }
+
+    @classmethod
     def _troubleshooting_stage(cls, user_input: str, memory: dict) -> str | None:
         """Return the deterministic diagnostic stage for the active router topic."""
         if memory.get("active_topic") != "router_troubleshooting":
@@ -682,81 +792,131 @@ class SLTMobitelUnifiedAgent:
             handover_md = rep.get("draft_handover_summary", "")
             has_knowledge = "insufficient telemetry" not in severity.lower()
         else:
-            mcp_tool_used = "slt_query_cloud_kb"
-            trace_steps.append(
-                f"Step 3 (MCP Tool `{mcp_tool_used}`): Queried SLTMobitel CloudFront / API Gateway KnowledgeBase (top_k={top_k})."
+            filter_params = self._parse_package_filter_query(
+                clean_user_input, active_memory.get("active_entity")
             )
-            mcp_rep = self.mcp_server.call_tool(
-                mcp_tool_used,
-                {
-                    "sanitized_query": clean_text,
-                    "retrieval_query": retrieval_query,
-                    "top_k": top_k,
-                    "inference_engine": inference_engine,
-                    "ollama_model": ollama_model,
-                    "gemini_api_key": gemini_api_key,
-                    "bedrock_model": bedrock_model,
-                    "aws_region": aws_region,
-                    "aws_access_key_id": aws_access_key_id,
-                    "aws_secret_access_key": aws_secret_access_key,
-                    "kb_secret_override": kb_secret_override,
-                    "kb_endpoint_override": kb_endpoint_override
-                }
-            )
-            rep = mcp_rep["structuredContent"]
-            if rep.get("kb_api_error"):
-                warnings_list.append(rep["kb_api_error"])
-            if rep.get("llm_fallback_warning"):
-                warnings_list.append(rep["llm_fallback_warning"])
-
-            # Prevent the deterministic fallback from repeating the exact same answer across consecutive turns
-            if conversation_history and rep.get("inference_mode") == "AWS_KB_DIRECT_SYNTHESIS":
-                recent_answers = {
-                    t.get("agent_response", {}).get("answer_markdown", "").strip()
-                    for t in conversation_history[-2:]
-                }
-                normalized_current_input = re.sub(
-                    r"[^a-z0-9]+", " ", clean_user_input.lower()
-                ).strip()
-                repeated_user_input = any(
-                    re.sub(
-                        r"[^a-z0-9]+", " ",
-                        (t.get("user_input") or "").lower()
-                    ).strip() == normalized_current_input
-                    for t in conversation_history[-2:]
+            if filter_params:
+                if filter_params.get("category") in ("fibre", "lte", "peotv", "addons"):
+                    active_memory["active_entity"] = filter_params["category"]
+                    active_memory["active_topic"] = "customer_product_support"
+                mcp_tool_used = "slt_filter_packages"
+                trace_steps.append(
+                    f"Step 3 (MCP Tool `{mcp_tool_used}`): Filtered package catalog "
+                    f"(category={filter_params['category']}, max_price={filter_params['max_price']}, "
+                    f"min_speed={filter_params['min_speed_mbps']})."
                 )
-                # Only escalate repeated *troubleshooting* answers; repeated factual answers (loans, USSD, packages) stay as-is
-                ans_l = rep["answer"].strip().lower()
-                is_troubleshooting_answer = any(k in ans_l for k in ("troubleshoot", "router", "wi-fi", "connection"))
-                if (
-                    repeated_user_input
-                    and is_troubleshooting_answer
-                    and rep["answer"].strip() in recent_answers
-                ):
-                    rep["has_enough_knowledge"] = True
-                    rep["answer"] = (
-                        "Since you have already checked those initial steps, here are the **remaining verification "
-                        "and support escalation steps**:"
-                    )
-                    rep["key_points"] = [
-                        "**1. Verify `WLAN` & `GPON` LEDs:** Ensure `WLAN` is ON (press the **Wi-Fi / WLAN** button if OFF) and `GPON` is **solid green**.",
-                        "**2. Check Data Quota (`MySLT App` / `#170#` / `#1456#`):** Open **MySLT App → Internet → Data Remaining** (`https://myslt.slt.lk/`) to confirm your package quota is not exceeded.",
-                        "**3. Cables, Wi-Fi Password & Restart:** Check that telephone/Fibre and Ethernet cables are tightly connected, restart the router, and change your Wi-Fi password if speed is slow.",
-                        "**4. Contact SLTMobitel Support:** Call **`1212`** (Fixed/Fibre/PEOTV) or **`1717`** (Mobile), or log a fault ticket via the **MySLT App**."
-                    ]
+                mcp_rep = self.mcp_server.call_tool(mcp_tool_used, filter_params)
+                rep = mcp_rep["structuredContent"]
+                count = rep.get("count", 0)
+                bullets = rep.get("bullets", [])
 
-            has_knowledge = bool(rep.get("has_enough_knowledge", True))
-            headline = "AI Assistant"
-            answer_md = rep["answer"]
-            key_points = rep["key_points"]
-            severity = f"KB_{rep['confidence']}"
-            confidence = rep["confidence"]
-            esc_req = False
-            esc_target = rep.get("follow_up_suggestion", "")
-            citations = rep["citations"]
-            chunks = rep["retrieved_chunks"]
-            engine_used = rep["inference_mode"]
-            handover_md = ""
+                headline = "SLTMobitel Package Recommendations"
+                if count > 0:
+                    answer_md = (
+                        f"Here are the SLTMobitel packages matching your criteria:\n\n"
+                        f"{rep['summary_markdown']}\n\n"
+                        f"You can subscribe or upgrade via the **MySLT App** (https://myslt.slt.lk/), "
+                        f"by calling **1212**, or visiting any SLT Teleshop."
+                    )
+                    key_points = bullets[:4]
+                else:
+                    answer_md = (
+                        "No packages were found matching your criteria. "
+                        "Please adjust your budget or speed requirements, or contact SLTMobitel at **1212** "
+                        "for tailored solutions."
+                    )
+                    key_points = ["No packages matched the specified filter criteria."]
+
+                has_knowledge = True
+                severity = "KB_HIGH"
+                confidence = "HIGH"
+                esc_req = False
+                esc_target = "Customer Support 1212 / MySLT App"
+                citations = ["slt_customer_kb_catalog.md (Verified Product Catalog)"]
+                chunks = [{
+                    "text": rep.get("summary_markdown", "") or "No packages found",
+                    "title": "SLT Customer KB Catalog",
+                    "source": "slt_customer_kb_catalog.md",
+                    "score": 0.90
+                }]
+                engine_used = "STRUCTURED_PACKAGE_FILTER"
+                handover_md = ""
+            else:
+                mcp_tool_used = "slt_query_cloud_kb"
+                trace_steps.append(
+                    f"Step 3 (MCP Tool `{mcp_tool_used}`): Queried SLTMobitel CloudFront / API Gateway KnowledgeBase (top_k={top_k})."
+                )
+                mcp_rep = self.mcp_server.call_tool(
+                    mcp_tool_used,
+                    {
+                        "sanitized_query": clean_text,
+                        "retrieval_query": retrieval_query,
+                        "top_k": top_k,
+                        "inference_engine": inference_engine,
+                        "ollama_model": ollama_model,
+                        "gemini_api_key": gemini_api_key,
+                        "bedrock_model": bedrock_model,
+                        "aws_region": aws_region,
+                        "aws_access_key_id": aws_access_key_id,
+                        "aws_secret_access_key": aws_secret_access_key,
+                        "kb_secret_override": kb_secret_override,
+                        "kb_endpoint_override": kb_endpoint_override
+                    }
+                )
+                rep = mcp_rep["structuredContent"]
+                if rep.get("kb_api_error"):
+                    warnings_list.append(rep["kb_api_error"])
+                if rep.get("llm_fallback_warning"):
+                    warnings_list.append(rep["llm_fallback_warning"])
+
+                # Prevent the deterministic fallback from repeating the exact same answer across consecutive turns
+                if conversation_history and rep.get("inference_mode") == "AWS_KB_DIRECT_SYNTHESIS":
+                    recent_answers = {
+                        t.get("agent_response", {}).get("answer_markdown", "").strip()
+                        for t in conversation_history[-2:]
+                    }
+                    normalized_current_input = re.sub(
+                        r"[^a-z0-9]+", " ", clean_user_input.lower()
+                    ).strip()
+                    repeated_user_input = any(
+                        re.sub(
+                            r"[^a-z0-9]+", " ",
+                            (t.get("user_input") or "").lower()
+                        ).strip() == normalized_current_input
+                        for t in conversation_history[-2:]
+                    )
+                    # Only escalate repeated *troubleshooting* answers; repeated factual answers (loans, USSD, packages) stay as-is
+                    ans_l = rep["answer"].strip().lower()
+                    is_troubleshooting_answer = any(k in ans_l for k in ("troubleshoot", "router", "wi-fi", "connection"))
+                    if (
+                        repeated_user_input
+                        and is_troubleshooting_answer
+                        and rep["answer"].strip() in recent_answers
+                    ):
+                        rep["has_enough_knowledge"] = True
+                        rep["answer"] = (
+                            "Since you have already checked those initial steps, here are the **remaining verification "
+                            "and support escalation steps**:"
+                        )
+                        rep["key_points"] = [
+                            "**1. Verify `WLAN` & `GPON` LEDs:** Ensure `WLAN` is ON (press the **Wi-Fi / WLAN** button if OFF) and `GPON` is **solid green**.",
+                            "**2. Check Data Quota (`MySLT App` / `#170#` / `#1456#`):** Open **MySLT App → Internet → Data Remaining** (`https://myslt.slt.lk/`) to confirm your package quota is not exceeded.",
+                            "**3. Cables, Wi-Fi Password & Restart:** Check that telephone/Fibre and Ethernet cables are tightly connected, restart the router, and change your Wi-Fi password if speed is slow.",
+                            "**4. Contact SLTMobitel Support:** Call **`1212`** (Fixed/Fibre/PEOTV) or **`1717`** (Mobile), or log a fault ticket via the **MySLT App**."
+                        ]
+
+                has_knowledge = bool(rep.get("has_enough_knowledge", True))
+                headline = "AI Assistant"
+                answer_md = rep["answer"]
+                key_points = rep["key_points"]
+                severity = f"KB_{rep['confidence']}"
+                confidence = rep["confidence"]
+                esc_req = False
+                esc_target = rep.get("follow_up_suggestion", "")
+                citations = rep["citations"]
+                chunks = rep["retrieved_chunks"]
+                engine_used = rep["inference_mode"]
+                handover_md = ""
 
         trace_steps.append(
             f"🧠 **Step 4 (Synthesis Engine):** Generated grounded response via `{engine_used}` using `{len(chunks)}` retrieved chunk(s)."

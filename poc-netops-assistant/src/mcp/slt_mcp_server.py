@@ -12,6 +12,7 @@ if str(SRC_DIR) not in sys.path:
 
 from ingestion.sanitizer import SovereignDataSanitizer
 from retrieval.rag_engine import SovereignNetOpsRAG
+from retrieval.package_catalog import SLTPackageCatalog
 from voice.voice_agent import SLTMobitelVoiceAgent
 
 
@@ -38,11 +39,14 @@ class SLTMCPToolServer:
         self,
         manuals_dir: Path | None = None,
         sanitizer: SovereignDataSanitizer | None = None,
-        rag: SovereignNetOpsRAG | None = None
+        rag: SovereignNetOpsRAG | None = None,
+        package_catalog: SLTPackageCatalog | None = None
     ):
         self.manuals_dir = manuals_dir or (BASE_DIR / "data" / "approved_manuals")
         self.sanitizer = sanitizer or SovereignDataSanitizer()
         self.rag = rag or SovereignNetOpsRAG(manuals_dir=self.manuals_dir, enable_embeddings=False)
+        catalog_file = self.manuals_dir / "slt_customer_kb_catalog.md"
+        self.package_catalog = package_catalog or SLTPackageCatalog(catalog_file)
 
     def list_tools(self) -> list[dict]:
         """Returns the MCP `tools/list` schema definitions."""
@@ -145,6 +149,49 @@ class SLTMCPToolServer:
                         "key_points": {"type": "array", "items": {"type": "string"}}
                     },
                     "required": ["answer_markdown"]
+                }
+            },
+            {
+                "name": "slt_filter_packages",
+                "description": (
+                    "Filters and queries SLTMobitel broadband, LTE, PEOTV, and add-on packages by budget "
+                    "(max/min price), minimum speed (Mbps), unlimited data policy, category (fibre, lte, peotv, addons), or keyword."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "enum": ["all", "fibre", "lte", "peotv", "addons"],
+                            "description": "Package category filter.",
+                            "default": "all"
+                        },
+                        "max_price": {
+                            "type": "number",
+                            "description": "Maximum monthly rental / price in LKR (Rs.)."
+                        },
+                        "min_price": {
+                            "type": "number",
+                            "description": "Minimum monthly rental / price in LKR (Rs.)."
+                        },
+                        "min_speed_mbps": {
+                            "type": "integer",
+                            "description": "Minimum download speed in Mbps (e.g. 100, 300, 1000)."
+                        },
+                        "is_unlimited": {
+                            "type": "boolean",
+                            "description": "Whether to filter for unlimited data packages."
+                        },
+                        "search_term": {
+                            "type": "string",
+                            "description": "Specific plan name or feature keyword (e.g., 'flash', 'gamer', 'youtube')."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of packages to return (default 6).",
+                            "default": 6
+                        }
+                    }
                 }
             }
         ]
@@ -271,6 +318,38 @@ class SLTMCPToolServer:
                 "isError": False,
                 "structuredContent": voice_payload,
                 "content": [{"type": "text", "text": spoken}]
+            }
+
+        if name == "slt_filter_packages":
+            category = str(args.get("category", "all"))
+            max_price = float(args["max_price"]) if args.get("max_price") is not None else None
+            min_price = float(args["min_price"]) if args.get("min_price") is not None else None
+            min_speed = int(args["min_speed_mbps"]) if args.get("min_speed_mbps") is not None else None
+            is_unl = bool(args["is_unlimited"]) if "is_unlimited" in args and args["is_unlimited"] is not None else None
+            term = str(args.get("search_term", "")) if args.get("search_term") else None
+            try:
+                lim = max(1, min(int(args.get("limit", 6)), 20))
+            except (TypeError, ValueError):
+                lim = 6
+
+            res = self.package_catalog.filter_packages(
+                category=category,
+                max_price=max_price,
+                min_price=min_price,
+                min_speed_mbps=min_speed,
+                is_unlimited=is_unl,
+                search_term=term,
+                limit=lim
+            )
+            text_md = (
+                f"### {res['headline']}\n\n" + res["summary_markdown"]
+                if res["count"] > 0
+                else "No packages found matching the specified criteria."
+            )
+            return {
+                "isError": False,
+                "structuredContent": res,
+                "content": [{"type": "text", "text": text_md}]
             }
 
         return {
