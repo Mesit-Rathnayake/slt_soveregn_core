@@ -172,7 +172,7 @@ export default function ChatView({
       <div className="chat-toolbar">
         <div>
           <strong>SLTMobitel AI Assistant</strong>{' '}
-          <span style={{ color: '#64748b' }}>· Grounded KB, Package Filter &amp; Support</span>
+          <span style={{ color: '#64748b' }}>· 24/7 Customer Support</span>
         </div>
         <button className="btn btn-ghost" onClick={resetChat}>
           <RotateCcw size={14} /> New Chat
@@ -231,12 +231,8 @@ export default function ChatView({
                       </ul>
                     )}
 
-                    <div className="msg-meta">
-                      <span>
-                        Tool: <code>{res.mcp_tool_called || 'kb'}</code> ·{' '}
-                        {res.latency_ms ? `${Math.round(res.latency_ms)} ms` : '0 ms'}
-                      </span>
-                      {res.spoken_response && (
+                    {res.spoken_response && (
+                      <div className="msg-meta" style={{ justifyContent: 'flex-end' }}>
                         <button
                           className="btn btn-ghost"
                           style={{ padding: '2px 8px', fontSize: '0.75rem' }}
@@ -244,8 +240,8 @@ export default function ChatView({
                         >
                           <Volume2 size={13} /> {playingIdx === idx ? 'Playing...' : 'Listen'}
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </React.Fragment>

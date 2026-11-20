@@ -959,8 +959,7 @@ class SLTMobitelUnifiedAgent:
                         f"- **Data Balance:** {rep['data_remaining_gb']} GB remaining of {rep['data_total_gb']} GB\n"
                         f"- **Current Bill:** Rs. {rep['current_balance_rs']:,.2f} (Due: {rep['bill_due_date']})\n"
                         f"- **Optical Rx Power:** {rep['optical_rx_power_dbm']} dBm\n"
-                        f"- **Open Support Tickets:** {rep['open_tickets_count']}\n\n"
-                        f"*(Status: {rep['gateway_status']})*"
+                        f"- **Open Support Tickets:** {rep['open_tickets_count']}"
                     )
                     key_points = [
                         f"Package: {rep['subscribed_package']}",

@@ -8,7 +8,7 @@ export default function RoleGate({ onSelectRole }) {
     <div className="gate-container">
       <div className="gate-header">
         <div className="brand-pill">
-          <Shield size={14} /> SLTMobitel Sovereign AI Platform
+          <Shield size={14} /> SLTMobitel Customer Support
         </div>
         <h1>Welcome to SLTMobitel Support</h1>
         <p>
@@ -40,7 +40,7 @@ export default function RoleGate({ onSelectRole }) {
               </li>
             </ul>
             <div className="account-input-group">
-              <label htmlFor="acc-input">Account / Telephone Number (Demo Stub)</label>
+              <label htmlFor="acc-input">Account / Telephone Number</label>
               <input
                 id="acc-input"
                 type="text"

@@ -213,16 +213,6 @@ export default function AccountTicketsView({ userRole, accountNumber }) {
 
   return (
     <div>
-      {profile?.is_mock_data && (
-        <div className="alert-banner warn">
-          <KeyRound size={18} />
-          <span>
-            <strong>Stub Mode Active:</strong> Displaying verified sample account stats until your
-            supervisor provides <code>SLT_CUSTOMER_DATA_API_KEY</code> in <code>.env</code>.
-          </span>
-        </div>
-      )}
-
       {/* Account Overview Stats */}
       {profile && (
         <div className="dashboard-grid">
