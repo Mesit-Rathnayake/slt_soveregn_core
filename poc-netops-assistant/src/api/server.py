@@ -106,6 +106,11 @@ def list_roles():
 def chat(req: ChatRequest):
     if req.user_role not in SovereignGovernanceManager.ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role: {req.user_role}")
+    if not governance.check_permission(req.user_role, "can_use_ai_agent"):
+        raise HTTPException(
+            status_code=403,
+            detail="AI Assistant access is not enabled for the Technical Officer role. Use the Fault Ticket Review Queue."
+        )
 
     turn_res = agent.run_agent(
         user_input=req.user_input.strip(),

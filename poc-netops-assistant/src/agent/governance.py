@@ -13,6 +13,7 @@ class SovereignGovernanceManager:
 
     ROLES = {
         "Existing Customer": {
+            "can_use_ai_agent": True,
             "can_log_fault_tickets": True,
             "can_view_account_stats": True,
             "can_manage_fault_tickets": False,
@@ -27,6 +28,7 @@ class SovereignGovernanceManager:
             ]
         },
         "New Customer": {
+            "can_use_ai_agent": True,
             "can_log_fault_tickets": False,
             "can_view_account_stats": False,
             "can_manage_fault_tickets": False,
@@ -40,21 +42,21 @@ class SovereignGovernanceManager:
             ]
         },
         "Technical Officer": {
-            "can_log_fault_tickets": True,
+            "can_use_ai_agent": False,
+            "can_log_fault_tickets": False,
             "can_view_account_stats": True,
             "can_manage_fault_tickets": True,
             "can_contact_customers": True,
-            "can_analyze_incidents": True,
-            "can_search_sops": True,
-            "can_query_aws_kb": True,
+            "can_analyze_incidents": False,
+            "can_search_sops": False,
+            "can_query_aws_kb": False,
             "can_view_audit_logs": False,
             "allowed_classifications": [
-                "Tier-1 Approved Technical Documentation",
-                "SLTMobitel Public/Customer KB",
                 "Customer Account Self-Care"
             ]
         },
         "Tier-1 NOC / Support Agent": {
+            "can_use_ai_agent": True,
             "can_log_fault_tickets": True,
             "can_view_account_stats": True,
             "can_manage_fault_tickets": True,
@@ -66,6 +68,7 @@ class SovereignGovernanceManager:
             "allowed_classifications": ["Tier-1 Approved Technical Documentation", "SLTMobitel Public/Customer KB"]
         },
         "Tier-2 Core Engineer": {
+            "can_use_ai_agent": True,
             "can_log_fault_tickets": True,
             "can_view_account_stats": True,
             "can_manage_fault_tickets": True,
@@ -81,6 +84,7 @@ class SovereignGovernanceManager:
             ]
         },
         "Sovereign Cloud Auditor": {
+            "can_use_ai_agent": True,
             "can_log_fault_tickets": False,
             "can_view_account_stats": True,
             "can_manage_fault_tickets": False,

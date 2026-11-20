@@ -133,7 +133,7 @@ export default function RoleGate({ onSelectRole }) {
                 <CheckCircle2 size={16} className="ok" /> Contact Customers (Call / SMS / Portal Updates)
               </li>
               <li>
-                <CheckCircle2 size={16} className="ok" /> Update Ticket Status, SLA &amp; NetOps SOP AI
+                <CheckCircle2 size={16} className="ok" /> Update Ticket Status, SLA &amp; Field Dispatch
               </li>
             </ul>
             <div className="account-input-group">

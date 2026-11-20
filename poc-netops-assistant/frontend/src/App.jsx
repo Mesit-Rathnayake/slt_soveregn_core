@@ -44,6 +44,7 @@ export default function App() {
 
   const canUseAccountPortal = userRole !== 'New Customer';
   const canManageTickets = isOfficerRole(userRole);
+  const canUseAgent = userRole !== 'Technical Officer';
   const RoleIcon =
     userRole === 'Existing Customer'
       ? UserCheck
@@ -78,12 +79,14 @@ export default function App() {
             </button>
           )}
 
-          <button
-            className={`nav-tab ${activeTab === 'chat' ? 'active' : ''}`}
-            onClick={() => setActiveTab('chat')}
-          >
-            <MessageSquare size={15} /> AI Assistant
-          </button>
+          {canUseAgent && (
+            <button
+              className={`nav-tab ${activeTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+            >
+              <MessageSquare size={15} /> AI Assistant
+            </button>
+          )}
 
           {canUseAccountPortal && userRole !== 'Technical Officer' && (
             <button

@@ -1288,7 +1288,13 @@ def test_technical_officer_role_ticket_review_and_contact():
     assert upd["ticket"]["assigned_officer"] == "Eng. Nimal Silva"
     assert len(upd["ticket"]["officer_updates"]) >= 1
 
-    # 3. Customers (Existing or New) are blocked with HTTP 403 from Officer queue
+    # 3. Technical Officer is blocked with HTTP 403 from AI Assistant /api/chat
+    from api.server import chat, ChatRequest
+    with pytest.raises(HTTPException) as exc_chat:
+        chat(ChatRequest(user_input="Hello", user_role="Technical Officer"))
+    assert exc_chat.value.status_code == 403
+
+    # 4. Customers (Existing or New) are blocked with HTTP 403 from Officer queue
     for cust_role in ("Existing Customer", "New Customer"):
         with pytest.raises(HTTPException) as exc_list:
             officer_list_tickets(x_user_role=cust_role)
