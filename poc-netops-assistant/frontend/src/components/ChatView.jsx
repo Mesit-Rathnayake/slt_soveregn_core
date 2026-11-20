@@ -14,10 +14,10 @@ import MarkdownText from './MarkdownText.jsx';
 
 const QUICK_PROMPTS = {
   'Existing Customer': [
-    'Please log a fault ticket: my Fibre connection has red LOS light and no internet',
     'Show my account status',
     'What Fibre packages are under Rs. 5,000?',
     'How do I restart or troubleshoot my router?',
+    'How do I check my SLTMobitel data balance and USSD codes?',
   ],
   'New Customer': [
     'What Fibre packages are under Rs. 5,000?',

@@ -398,8 +398,8 @@ if st.session_state.current_page == "💬 AI Assistant":
         c1, c2 = st.columns(2)
         if active_role == "Existing Customer":
             with c1:
-                if st.button("🔴 Report a fault ticket for red LOS light", use_container_width=True, key="btn_ext_ticket"):
-                    queue_prompt("Please log a fault ticket: my Fibre connection has red LOS light and no internet", "AWS_CLOUD_KB")
+                if st.button("📱 Check active packages & USSD codes (#888# / #1456#)", use_container_width=True, key="btn_ext_ussd"):
+                    queue_prompt("How to see active packages", "AWS_CLOUD_KB")
                     st.rerun()
                 if st.button("📊 Show my account profile & data balance", use_container_width=True, key="btn_ext_account"):
                     queue_prompt("Show my account status", "AWS_CLOUD_KB")
