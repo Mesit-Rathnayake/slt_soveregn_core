@@ -33,12 +33,23 @@ class SLTCustomerAccountGateway:
             {
                 "ticket_id": "FLT-2026-1042",
                 "account_id": "SLT-ACC-0112456789",
-                "service_type": "Fibre",
+                "service_type": "Fibre Broadband (FTTH)",
+                "fault_category": "Wi-Fi / Router Hardware Issue",
+                "led_status": "All Lights Green",
+                "router_restarted": True,
+                "affected_devices": "All Devices",
+                "issue_started": "1-2 days ago",
+                "impact_level": "Medium (Degraded Service)",
+                "contact_name": "Kasun Perera",
+                "contact_number": "071 234 5678",
+                "service_address": "No. 42, Galle Road, Colombo 03",
+                "preferred_visit_slot": "Morning (08:00 - 12:00)",
                 "status": "RESOLVED",
                 "priority": "NORMAL",
+                "target_sla": "Within 8 Hours",
                 "created_at": "2026-10-15T09:30:00Z",
                 "resolved_at": "2026-10-15T13:45:00Z",
-                "issue_description": "Wi-Fi password reset and channel optimization",
+                "issue_description": "Wi-Fi password reset and 5GHz channel optimization",
                 "assigned_team": "SLT Regional Fibre Operations"
             }
         ]
@@ -127,16 +138,26 @@ class SLTCustomerAccountGateway:
         identifier: str,
         service_type: str = "Fibre",
         issue_description: str = "Connection fault reported by subscriber",
-        contact_number: str | None = None
+        contact_number: str | None = None,
+        fault_category: str = "General Connectivity Fault",
+        led_status: str = "Not Specified",
+        router_restarted: bool = False,
+        affected_devices: str = "All Devices",
+        issue_started: str = "Today",
+        impact_level: str = "High (Household Outage)",
+        contact_name: str | None = None,
+        service_address: str | None = None,
+        preferred_visit_slot: str = "Anytime (08:00 - 18:00)"
     ) -> dict:
         """
-        Creates and logs a customer fault ticket.
+        Creates and logs a descriptive customer fault ticket with hardware diagnostics,
+        impact assessment, and field visit details.
         Generates a unique reference (e.g. FLT-2026-XXXX) and assigns SLA and regional field team.
         """
         clean_id = re.sub(r"[^0-9a-zA-Z\-]", "", str(identifier)).strip() or "0112456789"
         acc_num = clean_id if clean_id.startswith("SLT-ACC-") else f"SLT-ACC-{clean_id}"
 
-        desc_lower = issue_description.lower()
+        desc_lower = f"{issue_description} {fault_category} {led_status}".lower()
         svc_lower = service_type.lower()
 
         # Categorize Division
@@ -154,7 +175,10 @@ class SLTCustomerAccountGateway:
             division = "SLT Regional Fibre Operations & GPON Maintenance"
 
         # Determine Priority & SLA
-        is_critical = any(w in desc_lower for w in ("los", "red light", "no connection", "down", "not working", "cut"))
+        is_critical = (
+            any(w in desc_lower for w in ("los", "red light", "red", "no connection", "down", "not working", "cut", "outage"))
+            or "critical" in impact_level.lower()
+        )
         priority = "CRITICAL / HIGH" if is_critical else "NORMAL"
         target_sla = "Within 4 Hours (High Priority Optical/Line Fault)" if is_critical else "Within 8 Hours"
 
@@ -167,26 +191,38 @@ class SLTCustomerAccountGateway:
             "ticket_id": ticket_id,
             "account_id": acc_num,
             "service_type": category,
+            "fault_category": fault_category,
+            "led_status": led_status,
+            "router_restarted": bool(router_restarted),
+            "affected_devices": affected_devices,
+            "issue_started": issue_started,
+            "impact_level": impact_level,
             "status": "LOGGED",
             "priority": priority,
             "assigned_team": division,
             "target_sla": target_sla,
             "created_at": created_at,
             "issue_description": issue_description,
+            "contact_name": contact_name or "Kasun Perera",
             "contact_number": contact_number or "071 234 5678",
+            "service_address": service_address or "Registered Premises Address",
+            "preferred_visit_slot": preferred_visit_slot,
             "is_mock_ticket": not self.is_live_crm_enabled
         }
         self._mock_tickets.append(ticket_record)
 
+        restart_label = "Yes (Already restarted)" if router_restarted else "No"
         summary_md = (
             f"### Fault Ticket Logged Successfully: `{ticket_id}`\n\n"
             f"- **Account Number:** `{acc_num}`\n"
-            f"- **Service Type:** {category}\n"
-            f"- **Issue Summary:** {issue_description}\n"
-            f"- **Priority:** {priority}\n"
+            f"- **Service & Fault Type:** {category} — {fault_category}\n"
+            f"- **Router / LED Diagnostics:** `{led_status}` | Router Restarted: {restart_label} | Affected: {affected_devices}\n"
+            f"- **Impact & Timeline:** {impact_level} (Started: {issue_started})\n"
+            f"- **Detailed Issue Description:** {issue_description}\n"
+            f"- **Priority & SLA:** {priority} — {target_sla}\n"
             f"- **Assigned Team:** {division}\n"
-            f"- **Resolution SLA:** {target_sla}\n"
-            f"- **Contact Number:** `{ticket_record['contact_number']}`\n\n"
+            f"- **On-Site Contact:** {ticket_record['contact_name']} (`{ticket_record['contact_number']}`)\n"
+            f"- **Premises & Visit Window:** {ticket_record['service_address']} | {preferred_visit_slot}\n\n"
             f"Our technical field operations team has been notified. You can track this ticket via the "
             f"**MySLT App** or by calling **1212** quoting reference **`{ticket_id}`**."
         )
@@ -199,7 +235,7 @@ class SLTCustomerAccountGateway:
         }
 
     def get_ticket_status(self, ticket_id: str) -> dict:
-        """Retrieves details and status of an existing fault ticket."""
+        """Retrieves full details and status of an existing fault ticket."""
         clean_tid = ticket_id.strip().upper()
         for t in self._mock_tickets:
             if t["ticket_id"].upper() == clean_tid:
@@ -207,12 +243,14 @@ class SLTCustomerAccountGateway:
                     "found": True,
                     "ticket": t,
                     "summary_markdown": (
-                        f"**Ticket Ref:** `{t['ticket_id']}`\n"
-                        f"- **Status:** {t['status']}\n"
-                        f"- **Service:** {t['service_type']}\n"
-                        f"- **Priority:** {t['priority']}\n"
+                        f"### Ticket Reference: `{t['ticket_id']}`\n"
+                        f"- **Status:** `{t['status']}` | **Priority:** {t['priority']}\n"
+                        f"- **Service & Fault:** {t['service_type']} — {t.get('fault_category', 'General Fault')}\n"
+                        f"- **Diagnostics:** LED: `{t.get('led_status', 'N/A')}` | Restarted: {'Yes' if t.get('router_restarted') else 'No'} | Devices: {t.get('affected_devices', 'N/A')}\n"
+                        f"- **Description:** {t['issue_description']}\n"
                         f"- **Assigned Division:** {t['assigned_team']}\n"
-                        f"- **Target SLA:** {t['target_sla']}"
+                        f"- **Target SLA:** {t.get('target_sla', 'Within 8 Hours')}\n"
+                        f"- **Visit Window & Address:** {t.get('preferred_visit_slot', 'Anytime')} — {t.get('service_address', 'Registered Address')}"
                     )
                 }
         return {

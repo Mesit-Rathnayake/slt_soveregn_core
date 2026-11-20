@@ -753,7 +753,161 @@ body {
   font-size: 0.84em;
 }
 
+/* 3-Step Fault Ticket Wizard */
+.wizard-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.wizard-step.active {
+  background: #eff6ff;
+  border-color: var(--slt-blue);
+  color: var(--slt-blue-dark);
+  font-weight: 600;
+}
+
+.wizard-step.done {
+  background: var(--slt-green-light);
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.wizard-step.active .step-num {
+  background: var(--slt-blue);
+  color: #fff;
+}
+
+.wizard-step.done .step-num {
+  background: var(--slt-green);
+  color: #fff;
+}
+
+.precheck-box {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.precheck-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--slt-blue-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.wizard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.review-box {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.priority-pill {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.priority-pill.high {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.priority-pill.normal {
+  background: #eff6ff;
+  color: var(--slt-blue-dark);
+  border: 1px solid #bfdbfe;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.review-label {
+  display: block;
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.review-val {
+  font-size: 0.88rem;
+  color: var(--text);
+  margin-top: 2px;
+}
+
 @media (max-width: 720px) {
+  .wizard-steps {
+    grid-template-columns: 1fr;
+  }
   .topbar {
     flex-wrap: wrap;
     padding: 0.75rem 1rem;

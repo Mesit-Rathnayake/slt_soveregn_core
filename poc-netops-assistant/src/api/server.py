@@ -54,8 +54,17 @@ class ChatRequest(BaseModel):
 class FaultTicketRequest(BaseModel):
     account_number: str = Field(default="SLT-ACC-0112456789")
     service_type: str = Field(default="Fibre")
+    fault_category: str = Field(default="General Connectivity Fault")
+    led_status: str = Field(default="Not Specified")
+    router_restarted: bool = Field(default=False)
+    affected_devices: str = Field(default="All Devices")
+    issue_started: str = Field(default="Today")
+    impact_level: str = Field(default="High (Household Outage)")
     issue_description: str = Field(..., min_length=3, max_length=2000)
+    contact_name: str = Field(default="Kasun Perera")
     contact_number: str = Field(default="071 234 5678")
+    service_address: str = Field(default="Registered Premises Address")
+    preferred_visit_slot: str = Field(default="Anytime (08:00 - 18:00)")
     user_role: str = Field(default="Existing Customer")
 
 
@@ -134,6 +143,15 @@ def create_ticket(req: FaultTicketRequest):
         service_type=req.service_type,
         issue_description=req.issue_description,
         contact_number=req.contact_number,
+        fault_category=req.fault_category,
+        led_status=req.led_status,
+        router_restarted=req.router_restarted,
+        affected_devices=req.affected_devices,
+        issue_started=req.issue_started,
+        impact_level=req.impact_level,
+        contact_name=req.contact_name,
+        service_address=req.service_address,
+        preferred_visit_slot=req.preferred_visit_slot,
     )
     governance.log_event(
         user_role=req.user_role,
