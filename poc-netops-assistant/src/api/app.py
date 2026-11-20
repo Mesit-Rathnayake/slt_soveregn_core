@@ -252,20 +252,18 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    enable_voice_agent = st.toggle("Auto-play voice responses", value=False)
-
-    st.divider()
     st.caption("NAVIGATION")
     current_page = st.radio(
         "Navigation",
         options=["💬 AI Assistant", "🛡️ Role & Access Portal"],
         index=0 if st.session_state.current_page == "💬 AI Assistant" else 1,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="sidebar_nav_radio"
     )
     st.session_state.current_page = current_page
 
     st.divider()
-    enable_voice_agent = st.toggle("Auto-play voice responses", value=False)
+    enable_voice_agent = st.toggle("Auto-play voice responses", value=False, key="toggle_voice_agent")
 
     st.divider()
     st.caption("CURRENT ACTIVE ROLE")
@@ -400,47 +398,47 @@ if st.session_state.current_page == "💬 AI Assistant":
         c1, c2 = st.columns(2)
         if active_role == "Existing Customer":
             with c1:
-                if st.button("🔴 Report a fault ticket for red LOS light", use_container_width=True):
+                if st.button("🔴 Report a fault ticket for red LOS light", use_container_width=True, key="btn_ext_ticket"):
                     queue_prompt("Please log a fault ticket: my Fibre connection has red LOS light and no internet", "AWS_CLOUD_KB")
                     st.rerun()
-                if st.button("📊 Show my account profile & data balance", use_container_width=True):
+                if st.button("📊 Show my account profile & data balance", use_container_width=True, key="btn_ext_account"):
                     queue_prompt("Show my account status", "AWS_CLOUD_KB")
                     st.rerun()
             with c2:
-                if st.button("⚡ What Fibre packages are under Rs. 5,000?", use_container_width=True):
+                if st.button("⚡ What Fibre packages are under Rs. 5,000?", use_container_width=True, key="btn_ext_fibre"):
                     queue_prompt("What Fibre packages are under Rs. 5,000?", "AWS_CLOUD_KB")
                     st.rerun()
-                if st.button("🔧 Router & Wi-Fi troubleshooting steps", use_container_width=True):
+                if st.button("🔧 Router & Wi-Fi troubleshooting steps", use_container_width=True, key="btn_ext_router"):
                     queue_prompt("How do I restart or troubleshoot my router?", "AWS_CLOUD_KB")
                     st.rerun()
         elif active_role == "New Customer":
             with c1:
-                if st.button("⚡ What Fibre packages are under Rs. 5,000?", use_container_width=True):
+                if st.button("⚡ What Fibre packages are under Rs. 5,000?", use_container_width=True, key="btn_new_fibre"):
                     queue_prompt("What Fibre packages are under Rs. 5,000?", "AWS_CLOUD_KB")
                     st.rerun()
-                if st.button("📺 4G LTE Home Broadband & PEOTV packages", use_container_width=True):
+                if st.button("📺 4G LTE Home Broadband & PEOTV packages", use_container_width=True, key="btn_new_lte"):
                     queue_prompt("What are the SLTMobitel 4G LTE Home Broadband and PEOTV packages and prices?", "AWS_CLOUD_KB")
                     st.rerun()
             with c2:
-                if st.button("🚀 High-speed packages (>= 500 Mbps)", use_container_width=True):
+                if st.button("🚀 High-speed packages (>= 500 Mbps)", use_container_width=True, key="btn_new_highspeed"):
                     queue_prompt("Show me packages with at least 500 Mbps", "AWS_CLOUD_KB")
                     st.rerun()
-                if st.button("📝 How do I apply for a new SLT connection?", use_container_width=True):
+                if st.button("📝 How do I apply for a new SLT connection?", use_container_width=True, key="btn_new_apply"):
                     queue_prompt("How do I apply for a new SLT connection?", "AWS_CLOUD_KB")
                     st.rerun()
         else:
             with c1:
-                if st.button("Check active packages & USSD codes (#888# / #1456#)", use_container_width=True):
+                if st.button("Check active packages & USSD codes (#888# / #1456#)", use_container_width=True, key="btn_staff_packages"):
                     queue_prompt("How to see active packages", "AWS_CLOUD_KB")
                     st.rerun()
-                if st.button("Router & Wi-Fi troubleshooting steps", use_container_width=True):
+                if st.button("Router & Wi-Fi troubleshooting steps", use_container_width=True, key="btn_staff_router"):
                     queue_prompt("How do I restart or troubleshoot my router?", "AWS_CLOUD_KB")
                     st.rerun()
             with c2:
-                if st.button("4G LTE Home Broadband & PEOTV packages", use_container_width=True):
+                if st.button("4G LTE Home Broadband & PEOTV packages", use_container_width=True, key="btn_staff_lte"):
                     queue_prompt("What are the SLTMobitel 4G LTE Home Broadband and PEOTV packages and prices?", "AWS_CLOUD_KB")
                     st.rerun()
-                if st.button("Diagnose BGP optical signal loss (-21.4 dBm)", use_container_width=True):
+                if st.button("Diagnose BGP optical signal loss (-21.4 dBm)", use_container_width=True, key="btn_staff_bgp"):
                     queue_prompt(
                         "INCIDENT TICKET: INC-2026-1042 | AFFECTED NODE: SLT-CORE-PE-CMB-01 (172.16.45.128)\n"
                         "Contact: kasun@slt.com.lk (+94 71 234 5678). BGP-5-ADJCHANGE link flapped 7 times. "
@@ -554,7 +552,8 @@ else:
     selected_portal_role = st.selectbox(
         "Current Active Profile",
         options=role_options,
-        index=role_options.index(st.session_state.active_role)
+        index=role_options.index(st.session_state.active_role),
+        key="select_portal_active_role"
     )
     if selected_portal_role != st.session_state.active_role:
         st.session_state.active_role = selected_portal_role
@@ -630,8 +629,8 @@ else:
                     st.markdown(tick_res["summary_markdown"])
 
     with tab3:
-        query_tid = st.text_input("Enter Ticket Reference (e.g. FLT-2026-1042)", value="FLT-2026-1042")
-        if st.button("Check Ticket Progress"):
+        query_tid = st.text_input("Enter Ticket Reference (e.g. FLT-2026-1042)", value="FLT-2026-1042", key="input_portal_tid")
+        if st.button("Check Ticket Progress", key="btn_portal_check_tid"):
             status_obj = agent.mcp_server.account_gateway.get_ticket_status(query_tid)
             if status_obj["found"]:
                 st.info(status_obj["summary_markdown"])
@@ -653,6 +652,6 @@ else:
         )
 
     st.divider()
-    if st.button("← Return to Chat Assistant", type="primary", use_container_width=True):
+    if st.button("← Return to Chat Assistant", type="primary", use_container_width=True, key="btn_portal_return_chat"):
         st.session_state.current_page = "💬 AI Assistant"
         st.rerun()
