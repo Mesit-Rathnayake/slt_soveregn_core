@@ -571,7 +571,8 @@ class SLTMobitelUnifiedAgent:
         kb_secret_override: str | None = None,
         kb_endpoint_override: str | None = None,
         session_memory: dict | None = None,
-        user_role: str = "Existing Customer"
+        user_role: str = "Existing Customer",
+        service_segment: str = "Fibre"
     ) -> dict:
         t0 = time.perf_counter()
         trace_steps = []
@@ -948,9 +949,15 @@ class SLTMobitelUnifiedAgent:
                     handover_md = ""
                 else:
                     mcp_tool_used = "slt_get_account_profile"
-                    trace_steps.append(f"Step 3 (MCP Tool `{mcp_tool_used}`): Fetching account profile.")
-                    mcp_rep = self.mcp_server.call_tool(mcp_tool_used, {"account_number": "SLT-ACC-0112456789"})
+                    trace_steps.append(f"Step 3 (MCP Tool `{mcp_tool_used}`): Fetching account profile ({service_segment}).")
+                    mcp_rep = self.mcp_server.call_tool(
+                        mcp_tool_used,
+                        {"account_number": "SLT-ACC-0112456789", "service_segment": service_segment}
+                    )
                     rep = mcp_rep["structuredContent"]
+                    quota_unit = rep.get("quota_unit", "GB")
+                    sig_label = rep.get("signal_metric_label", "Optical Rx Power")
+                    sig_val = rep.get("signal_metric_value", f"{rep['optical_rx_power_dbm']} dBm")
                     asks_quota_only = bool(re.search(r"\b(?:quota|data|usage|balance)\b", clean_user_input.lower())) and not bool(
                         re.search(r"\b(?:account|profile|overview|status|details)\b", clean_user_input.lower())
                     )
@@ -965,23 +972,24 @@ class SLTMobitelUnifiedAgent:
                             else ""
                         )
                         answer_md = (
-                            f"### Your Current Data Quota (`{rep['account_id']}`)\n\n"
+                            f"### Your Current Quota ({rep.get('service_segment', service_segment)} · `{rep['account_id']}`)\n\n"
                             f"- **Subscribed Package:** {rep['subscribed_package']}\n"
-                            f"- **Data Remaining:** **{rep['data_remaining_gb']} GB** out of {rep['data_total_gb']} GB\n"
+                            f"- **{rep.get('quota_label', 'Data Remaining')}:** **{rep['data_remaining_gb']} {quota_unit}** out of {rep['data_total_gb']} {quota_unit}\n"
                             f"- **Connection Status:** `{rep['connection_status']}`"
                             f"{troubleshoot_note}"
                         )
                     else:
                         headline = f"Account Overview ({rep['account_id']})"
                         answer_md = (
-                            f"### Account Profile & Connection Overview\n\n"
+                            f"### Account Profile & Connection Overview ({rep.get('service_segment', service_segment)})\n\n"
                             f"- **Account Number:** `{rep['account_id']}`\n"
                             f"- **Customer Name:** {rep['customer_name']}\n"
+                            f"- **Service Type:** {rep.get('service_category', service_segment)}\n"
                             f"- **Connection Status:** `{rep['connection_status']}`\n"
                             f"- **Subscribed Package:** {rep['subscribed_package']}\n"
-                            f"- **Data Balance:** {rep['data_remaining_gb']} GB remaining of {rep['data_total_gb']} GB\n"
+                            f"- **{rep.get('quota_label', 'Data Balance')}:** {rep['data_remaining_gb']} {quota_unit} remaining of {rep['data_total_gb']} {quota_unit}\n"
                             f"- **Current Bill:** Rs. {rep['current_balance_rs']:,.2f} (Due: {rep['bill_due_date']})\n"
-                            f"- **Optical Rx Power:** {rep['optical_rx_power_dbm']} dBm\n"
+                            f"- **{sig_label}:** {sig_val}\n"
                             f"- **Open Support Tickets:** {rep['open_tickets_count']}"
                         )
                     key_points = []

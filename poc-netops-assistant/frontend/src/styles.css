@@ -261,6 +261,34 @@ body {
   border-color: var(--slt-green);
 }
 
+.segment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.segment-pill {
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segment-pill:hover {
+  border-color: var(--slt-green);
+}
+
+.segment-pill.active {
+  background: var(--slt-green-light);
+  border-color: var(--slt-green);
+  color: #065f46;
+}
+
 .staff-bar {
   margin-top: 2rem;
   display: flex;

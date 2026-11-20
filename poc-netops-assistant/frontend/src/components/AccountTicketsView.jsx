@@ -41,6 +41,19 @@ const FAULT_CATEGORIES = {
     'Unable to Make or Receive Calls',
     'External Drop Wire Damage',
   ],
+  Mobile: [
+    'No Mobile Signal / SIM Error',
+    'Slow 4G Mobile Data',
+    'VoLTE / Call Drop Issue',
+    'eSIM / Roaming Activation Issue',
+  ],
+};
+
+const SEGMENT_TO_SERVICE = {
+  Fibre: 'Fibre',
+  Broadband: '4G LTE',
+  PEOTV: 'PEOTV',
+  Mobile: 'Mobile',
 };
 
 const LED_OPTIONS = [
@@ -52,15 +65,18 @@ const LED_OPTIONS = [
   'Not Applicable (PEOTV / Voice)',
 ];
 
-export default function AccountTicketsView({ userRole, accountNumber }) {
+export default function AccountTicketsView({ userRole, accountNumber, serviceSegment = 'Fibre' }) {
+  const initialSvc = SEGMENT_TO_SERVICE[serviceSegment] || 'Fibre';
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [error, setError] = useState('');
 
   // 3-Step Fault Ticket Wizard State
   const [step, setStep] = useState(1);
-  const [serviceType, setServiceType] = useState('Fibre');
-  const [faultCategory, setFaultCategory] = useState(FAULT_CATEGORIES.Fibre[0]);
+  const [serviceType, setServiceType] = useState(initialSvc);
+  const [faultCategory, setFaultCategory] = useState(
+    (FAULT_CATEGORIES[initialSvc] || FAULT_CATEGORIES.Fibre)[0]
+  );
   const [ledStatus, setLedStatus] = useState(LED_OPTIONS[0]);
   const [impactLevel, setImpactLevel] = useState('High (Household Outage)');
   const [affectedDevices, setAffectedDevices] = useState('All Devices (Wi-Fi & Ethernet)');
@@ -87,9 +103,10 @@ export default function AccountTicketsView({ userRole, accountNumber }) {
     setLoadingProfile(true);
     setError('');
     try {
-      const resp = await fetch(`/api/account/${encodeURIComponent(accountNumber || '0112456789')}`, {
-        headers: { 'X-User-Role': userRole },
-      });
+      const resp = await fetch(
+        `/api/account/${encodeURIComponent(accountNumber || '0112456789')}?service_segment=${encodeURIComponent(serviceSegment)}`,
+        { headers: { 'X-User-Role': userRole } }
+      );
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.detail || 'Unable to fetch account profile.');
@@ -104,8 +121,11 @@ export default function AccountTicketsView({ userRole, accountNumber }) {
   };
 
   useEffect(() => {
+    const mapped = SEGMENT_TO_SERVICE[serviceSegment] || 'Fibre';
+    setServiceType(mapped);
+    setFaultCategory((FAULT_CATEGORIES[mapped] || FAULT_CATEGORIES.Fibre)[0]);
     loadProfile();
-  }, [userRole, accountNumber]);
+  }, [userRole, accountNumber, serviceSegment]);
 
   const handleServiceChange = (newService) => {
     setServiceType(newService);
@@ -228,21 +248,25 @@ export default function AccountTicketsView({ userRole, accountNumber }) {
           </div>
 
           <div className="stat-card">
-            <div className="stat-label">Subscribed Plan</div>
+            <div className="stat-label">Subscribed Plan ({profile.service_segment || serviceSegment})</div>
             <div className="stat-value" style={{ fontSize: '1.1rem' }}>
               {profile.subscribed_package.split('(')[0].trim()}
             </div>
-            <div className="stat-sub">Optical Rx: {profile.optical_rx_power_dbm} dBm</div>
+            <div className="stat-sub">
+              {profile.signal_metric_label || 'Optical Rx'}: {profile.signal_metric_value || `${profile.optical_rx_power_dbm} dBm`}
+            </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-label">Data Remaining</div>
-            <div className="stat-value">{profile.data_remaining_gb} GB</div>
+            <div className="stat-label">{profile.quota_label || 'Data Remaining'}</div>
+            <div className="stat-value">
+              {profile.data_remaining_gb} {profile.quota_unit || 'GB'}
+            </div>
             <div className="progress-track">
               <div className="progress-fill" style={{ width: `${dataPct}%` }} />
             </div>
             <div className="stat-sub">
-              {dataPct}% of {profile.data_total_gb} GB remaining
+              {dataPct}% of {profile.data_total_gb} {profile.quota_unit || 'GB'}
             </div>
           </div>
 
@@ -301,8 +325,9 @@ export default function AccountTicketsView({ userRole, accountNumber }) {
                 <label>1. Affected Service</label>
                 <select value={serviceType} onChange={(e) => handleServiceChange(e.target.value)}>
                   <option value="Fibre">SLT Fibre Broadband (FTTH)</option>
-                  <option value="4G LTE">4G LTE Home Broadband</option>
+                  <option value="4G LTE">Home Broadband (4G LTE)</option>
                   <option value="PEOTV">PEOTV</option>
+                  <option value="Mobile">SLTMobitel Mobile</option>
                   <option value="Copper Voice">Copper Voice / Megaline</option>
                 </select>
               </div>

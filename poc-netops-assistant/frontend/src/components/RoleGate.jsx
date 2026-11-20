@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
 import { UserCheck, UserPlus, Wrench, CheckCircle2, Lock, Shield, ArrowRight } from 'lucide-react';
 
+const SERVICE_SEGMENTS = [
+  { id: 'Fibre', label: 'Fibre (FTTH)' },
+  { id: 'Broadband', label: 'Broadband (4G LTE)' },
+  { id: 'PEOTV', label: 'PEOTV' },
+  { id: 'Mobile', label: 'Mobitel Mobile' },
+];
+
 export default function RoleGate({ onSelectRole }) {
   const [accountNumber, setAccountNumber] = useState('SLT-ACC-0112456789');
+  const [serviceSegment, setServiceSegment] = useState('Fibre');
 
   return (
     <div className="gate-container">
@@ -40,6 +48,21 @@ export default function RoleGate({ onSelectRole }) {
               </li>
             </ul>
             <div className="account-input-group">
+              <label>Your Service Type</label>
+              <div className="segment-grid">
+                {SERVICE_SEGMENTS.map((seg) => (
+                  <button
+                    key={seg.id}
+                    type="button"
+                    className={`segment-pill ${serviceSegment === seg.id ? 'active' : ''}`}
+                    onClick={() => setServiceSegment(seg.id)}
+                  >
+                    {seg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="account-input-group">
               <label htmlFor="acc-input">Account / Telephone Number</label>
               <input
                 id="acc-input"
@@ -52,9 +75,11 @@ export default function RoleGate({ onSelectRole }) {
           </div>
           <button
             className="btn btn-green"
-            onClick={() => onSelectRole('Existing Customer', accountNumber || 'SLT-ACC-0112456789')}
+            onClick={() =>
+              onSelectRole('Existing Customer', accountNumber || 'SLT-ACC-0112456789', serviceSegment)
+            }
           >
-            Continue as Existing Customer <ArrowRight size={16} />
+            Continue as {serviceSegment} Customer <ArrowRight size={16} />
           </button>
         </div>
 

@@ -44,6 +44,7 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     user_input: str = Field(..., min_length=1, max_length=4000)
     user_role: str = Field(default="Existing Customer")
+    service_segment: str = Field(default="Fibre")
     route_mode: str = Field(default="AUTO")
     inference_engine: str = Field(default_factory=lambda: os.getenv("AI_INFERENCE_MODE", "LOCAL_GROUNDED_RULE_ENGINE"))
     top_k: int = Field(default=3, ge=1, le=5)
@@ -114,6 +115,7 @@ def chat(req: ChatRequest):
         conversation_history=req.conversation_history[-10:],
         session_memory=req.session_memory,
         user_role=req.user_role,
+        service_segment=req.service_segment,
     )
 
     governance.log_event(
@@ -131,13 +133,17 @@ def chat(req: ChatRequest):
 
 
 @app.get("/api/account/{account_id}")
-def get_account(account_id: str, x_user_role: str = Header(default="Existing Customer")):
+def get_account(
+    account_id: str,
+    service_segment: str = "Fibre",
+    x_user_role: str = Header(default="Existing Customer"),
+):
     if not governance.check_permission(x_user_role, "can_view_account_stats"):
         raise HTTPException(
             status_code=403,
             detail="Account overview requires an Existing Customer subscription or authorized staff role."
         )
-    return agent.mcp_server.account_gateway.get_account_profile(account_id)
+    return agent.mcp_server.account_gateway.get_account_profile(account_id, service_segment=service_segment)
 
 
 @app.post("/api/tickets")

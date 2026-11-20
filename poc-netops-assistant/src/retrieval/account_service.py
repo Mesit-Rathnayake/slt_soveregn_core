@@ -149,21 +149,22 @@ class SLTCustomerAccountGateway:
             and len(self.api_key) > 8
         )
 
-    def get_account_profile(self, identifier: str = "0112456789") -> dict:
+    def get_account_profile(self, identifier: str = "0112456789", service_segment: str = "Fibre") -> dict:
         """
         Fetches customer account overview, subscribed package, data balance,
-        and active tickets. Uses live CRM if key is present; otherwise returns mock stats.
+        and active tickets tailored to the customer's service segment
+        (Fibre, Broadband, PEOTV, Mobile). Uses live CRM if key is present; otherwise mock stats.
         """
         clean_id = re.sub(r"[^0-9a-zA-Z\-]", "", str(identifier)).strip() or "0112456789"
         acc_num = clean_id if clean_id.startswith("SLT-ACC-") else f"SLT-ACC-{clean_id}"
+        seg_key = (service_segment or "Fibre").strip().lower()
 
         if self.is_live_crm_enabled:
-            # When supervisor provides the live key, upstream HTTP integration executes here
             try:
                 import urllib.request
                 import json
                 req = urllib.request.Request(
-                    f"{self.api_endpoint}/profile?account_id={acc_num}",
+                    f"{self.api_endpoint}/profile?account_id={acc_num}&segment={seg_key}",
                     headers={
                         "x-api-key": self.api_key,
                         "Accept": "application/json",
@@ -178,25 +179,88 @@ class SLTCustomerAccountGateway:
             except Exception:
                 pass  # Fall back to verified mock stats gracefully
 
-        # Verified Mock Account Profile
+        # Segment-tailored verified mock profiles
         open_ticks = [t for t in self._mock_tickets if t["status"] != "RESOLVED"]
-        return {
+        base_common = {
             "account_id": acc_num,
             "telephone_number": "011 234 5678",
             "customer_name": "Kasun Perera",
+            "bill_due_date": "2026-11-28",
+            "open_tickets_count": len(open_ticks),
+            "recent_tickets": self._mock_tickets[-5:],
+            "is_mock_data": True,
+            "gateway_status": "CONNECTED_STUB_MODE (Awaiting Live CRM Key)"
+        }
+
+        if "peo" in seg_key or "tv" in seg_key:
+            return {
+                **base_common,
+                "service_segment": "PEOTV",
+                "connection_status": "ACTIVE (STB Online)",
+                "service_category": "PEOTV Digital TV",
+                "subscribed_package": "PEOTV Titanium (120+ Channels, HD Enabled)",
+                "monthly_rental_rs": 2940.0,
+                "current_balance_rs": 2940.0,
+                "data_total_gb": 120.0,
+                "data_remaining_gb": 120.0,
+                "quota_label": "Active Channels",
+                "quota_unit": "Channels",
+                "signal_metric_label": "STB Signal / VLAN",
+                "signal_metric_value": "HD Multicast OK (VLAN 40)",
+                "optical_rx_power_dbm": -18.2,
+            }
+        if "broadband" in seg_key or "lte" in seg_key or "4g" in seg_key:
+            return {
+                **base_common,
+                "service_segment": "Broadband",
+                "connection_status": "ACTIVE (4G LTE Connected)",
+                "service_category": "Home Broadband (4G LTE)",
+                "subscribed_package": "Unlimited LTE Flash 10 (10 GB/day, 4G LTE)",
+                "monthly_rental_rs": 4090.0,
+                "current_balance_rs": 4090.0,
+                "data_total_gb": 10.0,
+                "data_remaining_gb": 7.4,
+                "quota_label": "Daily High-Speed Quota",
+                "quota_unit": "GB",
+                "signal_metric_label": "4G LTE RSRP Signal",
+                "signal_metric_value": "-76 dBm (Strong 4G+)",
+                "optical_rx_power_dbm": -76.0,
+            }
+        if "mobile" in seg_key or "mobitel" in seg_key:
+            return {
+                **base_common,
+                "telephone_number": "071 234 5678",
+                "service_segment": "Mobile",
+                "connection_status": "ACTIVE (4G / VoLTE)",
+                "service_category": "SLTMobitel Mobile Postpaid",
+                "subscribed_package": "Mobitel Postpaid Max (50 GB Anytime + Unlimited Calls)",
+                "monthly_rental_rs": 1890.0,
+                "current_balance_rs": 1890.0,
+                "data_total_gb": 50.0,
+                "data_remaining_gb": 31.8,
+                "quota_label": "Mobile Data Remaining",
+                "quota_unit": "GB",
+                "signal_metric_label": "Network / SIM Status",
+                "signal_metric_value": "4G VoLTE Active (eSIM Ready)",
+                "optical_rx_power_dbm": -82.0,
+            }
+
+        # Default: Fibre
+        return {
+            **base_common,
+            "service_segment": "Fibre",
             "connection_status": "ACTIVE (GPON Online)",
-            "service_category": "Fibre Broadband + PEOTV + Voice",
+            "service_category": "Fibre Broadband (FTTH)",
             "subscribed_package": "Fibre Flash 25 (250 GB Anytime, 100 Mbps)",
             "monthly_rental_rs": 4790.0,
             "current_balance_rs": 4790.0,
-            "bill_due_date": "2026-11-28",
             "data_total_gb": 250.0,
             "data_remaining_gb": 142.5,
+            "quota_label": "Monthly Data Remaining",
+            "quota_unit": "GB",
+            "signal_metric_label": "Optical Rx Power",
+            "signal_metric_value": "-18.2 dBm (Healthy)",
             "optical_rx_power_dbm": -18.2,
-            "open_tickets_count": len(open_ticks),
-            "recent_tickets": self._mock_tickets[-3:],
-            "is_mock_data": True,
-            "gateway_status": "CONNECTED_STUB_MODE (Awaiting Live CRM Key)"
         }
 
     def create_fault_ticket(

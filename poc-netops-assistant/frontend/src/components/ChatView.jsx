@@ -12,13 +12,34 @@ import {
 } from 'lucide-react';
 import MarkdownText from './MarkdownText.jsx';
 
-const QUICK_PROMPTS = {
-  'Existing Customer': [
+const SEGMENT_PROMPTS = {
+  Fibre: [
     'Show my account status',
+    'Can you check my quota',
     'What Fibre packages are under Rs. 5,000?',
     'How do I restart or troubleshoot my router?',
-    'How do I check my SLTMobitel data balance and USSD codes?',
   ],
+  Broadband: [
+    'Show my account status',
+    'Can you check my quota',
+    'What are the SLTMobitel 4G LTE Home Broadband packages?',
+    'My internet is getting very slow',
+  ],
+  PEOTV: [
+    'Show my account status',
+    'What are the PEOTV packages and prices?',
+    'How much is PEOTV Titanium?',
+    'How do I contact customer support?',
+  ],
+  Mobile: [
+    'Show my account status',
+    'Can you check my quota',
+    'How to get a Mobitel data loan (#170#)?',
+    'How do I get an instant credit loan (#247#)?',
+  ],
+};
+
+const QUICK_PROMPTS = {
   'New Customer': [
     'What Fibre packages are under Rs. 5,000?',
     'Show me packages with at least 500 Mbps',
@@ -35,6 +56,7 @@ const QUICK_PROMPTS = {
 
 export default function ChatView({
   userRole,
+  serviceSegment = 'Fibre',
   messages,
   setMessages,
   sessionMemory,
@@ -51,7 +73,10 @@ export default function ChatView({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  const prompts = QUICK_PROMPTS[userRole] || QUICK_PROMPTS.staff;
+  const prompts =
+    userRole === 'Existing Customer'
+      ? SEGMENT_PROMPTS[serviceSegment] || SEGMENT_PROMPTS.Fibre
+      : QUICK_PROMPTS[userRole] || QUICK_PROMPTS.staff;
 
   const sendMessage = async (textOverride) => {
     const query = (textOverride ?? input).trim();
@@ -72,6 +97,7 @@ export default function ChatView({
         body: JSON.stringify({
           user_input: query,
           user_role: userRole,
+          service_segment: serviceSegment,
           conversation_history: historyPayload,
           session_memory: sessionMemory,
         }),

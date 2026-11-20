@@ -437,7 +437,8 @@ class SLTMCPToolServer:
 
         if name == "slt_get_account_profile":
             acc_num = str(args.get("account_number") or "0112456789")
-            prof = self.account_gateway.get_account_profile(acc_num)
+            seg = str(args.get("service_segment") or "Fibre")
+            prof = self.account_gateway.get_account_profile(acc_num, service_segment=seg)
             text_md = (
                 f"### Customer Account Overview (`{prof['account_id']}`)\n\n"
                 f"- **Customer Name:** {prof['customer_name']}\n"

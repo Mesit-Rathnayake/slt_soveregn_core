@@ -17,6 +17,7 @@ import TechnicalOfficerView from './components/TechnicalOfficerView.jsx';
 export default function App() {
   const [userRole, setUserRole] = useState(null); // null => show RoleGate screen first
   const [accountNumber, setAccountNumber] = useState('SLT-ACC-0112456789');
+  const [serviceSegment, setServiceSegment] = useState('Fibre');
   const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [sessionMemory, setSessionMemory] = useState({});
@@ -26,9 +27,10 @@ export default function App() {
     role === 'Tier-1 NOC / Support Agent' ||
     role === 'Tier-2 Core Engineer';
 
-  const handleSelectRole = (role, accNum) => {
+  const handleSelectRole = (role, accNum, segment) => {
     setUserRole(role);
     if (accNum) setAccountNumber(accNum);
+    setServiceSegment(segment || 'Fibre');
     setActiveTab(role === 'Technical Officer' ? 'officer' : 'chat');
     setMessages([]);
     setSessionMemory({});
@@ -93,7 +95,8 @@ export default function App() {
 
         <div className="topbar-right">
           <span className="role-badge">
-            <RoleIcon size={14} /> {userRole}
+            <RoleIcon size={14} />{' '}
+            {userRole === 'Existing Customer' ? `${serviceSegment} Customer` : userRole}
           </span>
           <button className="switch-role-btn" onClick={() => setUserRole(null)}>
             <LogOut size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />
@@ -106,10 +109,15 @@ export default function App() {
         {activeTab === 'officer' && canManageTickets ? (
           <TechnicalOfficerView userRole={userRole} />
         ) : activeTab === 'account' && canUseAccountPortal ? (
-          <AccountTicketsView userRole={userRole} accountNumber={accountNumber} />
+          <AccountTicketsView
+            userRole={userRole}
+            accountNumber={accountNumber}
+            serviceSegment={serviceSegment}
+          />
         ) : (
           <ChatView
             userRole={userRole}
+            serviceSegment={serviceSegment}
             messages={messages}
             setMessages={setMessages}
             sessionMemory={sessionMemory}
