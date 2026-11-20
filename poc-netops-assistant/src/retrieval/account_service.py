@@ -50,7 +50,73 @@ class SLTCustomerAccountGateway:
                 "created_at": "2026-10-15T09:30:00Z",
                 "resolved_at": "2026-10-15T13:45:00Z",
                 "issue_description": "Wi-Fi password reset and 5GHz channel optimization",
-                "assigned_team": "SLT Regional Fibre Operations"
+                "assigned_team": "SLT Regional Fibre Operations",
+                "assigned_officer": "Eng. Nimal Silva",
+                "officer_updates": [
+                    {
+                        "timestamp": "2026-10-15T11:10:00Z",
+                        "officer_name": "Eng. Nimal Silva",
+                        "channel": "Phone Call",
+                        "message": "Contacted customer and assisted with 5GHz channel optimization. Speed confirmed normal.",
+                        "internal_note": "ONT Rx power healthy at -18.2 dBm.",
+                        "status_change": "RESOLVED"
+                    }
+                ]
+            },
+            {
+                "ticket_id": "FLT-2026-2108",
+                "account_id": "SLT-ACC-0112889941",
+                "service_type": "Fibre Broadband (FTTH)",
+                "fault_category": "Red LOS / Blinking PON LED",
+                "led_status": "LOS Red (Solid or Blinking)",
+                "router_restarted": True,
+                "affected_devices": "All Devices (Wi-Fi & Ethernet)",
+                "issue_started": "Today",
+                "impact_level": "Critical (Work / Business Halted)",
+                "contact_name": "Dilani Fernando",
+                "contact_number": "077 891 2345",
+                "service_address": "No. 18, Havelock Road, Colombo 05 (Near Police Park)",
+                "preferred_visit_slot": "Morning (08:00 - 12:00)",
+                "status": "LOGGED",
+                "priority": "CRITICAL / HIGH",
+                "target_sla": "Within 4 Hours (High Priority Optical/Line Fault)",
+                "created_at": "2026-11-20T06:15:00Z",
+                "issue_description": "LOS LED turned solid red after heavy rain this morning. Restarted ONT twice and checked patch cord.",
+                "assigned_team": "SLT Regional Fibre Operations & GPON Maintenance",
+                "assigned_officer": "Unassigned",
+                "officer_updates": []
+            },
+            {
+                "ticket_id": "FLT-2026-2114",
+                "account_id": "SLT-ACC-0812233445",
+                "service_type": "PEOTV",
+                "fault_category": "Channel Freezing / Pixelation",
+                "led_status": "All Lights Green (No Internet)",
+                "router_restarted": True,
+                "affected_devices": "PEOTV / Telephone Handset Only",
+                "issue_started": "1-2 days ago",
+                "impact_level": "Medium (Degraded Service)",
+                "contact_name": "Ruwan Bandara",
+                "contact_number": "071 554 9087",
+                "service_address": "No. 74, Peradeniya Road, Kandy",
+                "preferred_visit_slot": "Afternoon (12:00 - 16:00)",
+                "status": "IN_PROGRESS",
+                "priority": "NORMAL",
+                "target_sla": "Within 8 Hours",
+                "created_at": "2026-11-20T04:40:00Z",
+                "issue_description": "HD channels freezing every 2-3 minutes on PEOTV Set-Top Box even though Fibre internet works fine.",
+                "assigned_team": "PEOTV Regional Maintenance & Headend Ops",
+                "assigned_officer": "Tech. Chamara Jayasinghe",
+                "officer_updates": [
+                    {
+                        "timestamp": "2026-11-20T05:20:00Z",
+                        "officer_name": "Tech. Chamara Jayasinghe",
+                        "channel": "SMS Notification",
+                        "message": "We are checking your IPTV multicast profile and will call before the afternoon visit.",
+                        "internal_note": "Checking STB Ethernet port 4 VLAN binding.",
+                        "status_change": "IN_PROGRESS"
+                    }
+                ]
             }
         ]
 
@@ -207,6 +273,8 @@ class SLTCustomerAccountGateway:
             "contact_number": contact_number or "071 234 5678",
             "service_address": service_address or "Registered Premises Address",
             "preferred_visit_slot": preferred_visit_slot,
+            "assigned_officer": "Unassigned",
+            "officer_updates": [],
             "is_mock_ticket": not self.is_live_crm_enabled
         }
         self._mock_tickets.append(ticket_record)
@@ -258,3 +326,45 @@ class SLTCustomerAccountGateway:
             "ticket": None,
             "summary_markdown": f"No fault ticket found matching reference `{ticket_id}`. Please verify the ticket number or call 1212."
         }
+
+    def list_all_tickets(self, status_filter: str | None = None) -> list[dict]:
+        """Returns all fault tickets for Technical Officer review, newest first."""
+        items = list(reversed(self._mock_tickets))
+        if status_filter and status_filter.upper() != "ALL":
+            sf = status_filter.upper()
+            items = [t for t in items if t["status"].upper() == sf]
+        return items
+
+    def update_ticket(
+        self,
+        ticket_id: str,
+        status: str | None = None,
+        officer_name: str | None = None,
+        contact_channel: str | None = None,
+        customer_message: str | None = None,
+        internal_note: str | None = None
+    ) -> dict | None:
+        """
+        Allows a Technical Officer to update a fault ticket's status, assign themselves,
+        log an outbound customer contact (Call/SMS/Message), and record internal engineering notes.
+        """
+        clean_tid = ticket_id.strip().upper()
+        for t in self._mock_tickets:
+            if t["ticket_id"].upper() == clean_tid:
+                if status:
+                    t["status"] = status.strip().upper()
+                    if t["status"] == "RESOLVED":
+                        t["resolved_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if officer_name:
+                    t["assigned_officer"] = officer_name.strip()
+                if customer_message or internal_note or contact_channel:
+                    t.setdefault("officer_updates", []).append({
+                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "officer_name": officer_name or t.get("assigned_officer") or "Technical Officer",
+                        "channel": contact_channel or "Portal Update",
+                        "message": (customer_message or "").strip(),
+                        "internal_note": (internal_note or "").strip(),
+                        "status_change": t["status"]
+                    })
+                return t
+        return None

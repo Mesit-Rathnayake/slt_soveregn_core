@@ -73,10 +73,10 @@ body {
 
 .gate-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 1.4rem;
   width: 100%;
-  max-width: 780px;
+  max-width: 1080px;
 }
 
 .role-card {
@@ -120,6 +120,85 @@ body {
 .role-icon-box.green {
   background: var(--slt-green-light);
   color: var(--slt-green);
+}
+
+.role-icon-box.amber {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.role-card.officer:hover {
+  border-color: #d97706;
+  box-shadow: 0 12px 30px rgba(217, 119, 6, 0.14);
+}
+
+.btn-amber {
+  background: linear-gradient(135deg, #b45309, #d97706);
+  color: #fff;
+  width: 100%;
+}
+
+.btn-amber:hover {
+  opacity: 0.93;
+}
+
+.filter-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-pill {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filter-pill.active {
+  background: var(--slt-blue);
+  color: #fff;
+  border-color: var(--slt-blue);
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.timeline-item {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--slt-blue);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+}
+
+.timeline-meta {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.timeline-msg {
+  font-size: 0.87rem;
+  color: var(--text);
+}
+
+.timeline-note {
+  font-size: 0.78rem;
+  color: #92400e;
+  margin-top: 4px;
+  background: #fffbeb;
+  padding: 3px 8px;
+  border-radius: 5px;
+  display: inline-block;
 }
 
 .role-card h2 {

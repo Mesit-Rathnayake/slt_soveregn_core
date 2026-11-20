@@ -1256,5 +1256,55 @@ def test_fastapi_server_endpoints_and_rbac():
     assert "Fiber Starter" in chat_ok["answer_markdown"]
 
 
+def test_technical_officer_role_ticket_review_and_contact():
+    """Verifies Technical Officer RBAC: can review all tickets and contact users; customers get 403."""
+    import pytest
+    from fastapi import HTTPException
+    from api.server import (
+        officer_list_tickets,
+        officer_update_ticket,
+        OfficerTicketUpdateRequest,
+    )
+
+    # 1. Technical Officer can list all tickets
+    q = officer_list_tickets(x_user_role="Technical Officer")
+    assert q["count"] >= 2
+    target_tid = q["tickets"][0]["ticket_id"]
+
+    # 2. Technical Officer can update ticket status and log customer contact
+    upd = officer_update_ticket(
+        target_tid,
+        OfficerTicketUpdateRequest(
+            status="CONTACTED_CUSTOMER",
+            officer_name="Eng. Nimal Silva",
+            contact_channel="Phone Call",
+            customer_message="Confirmed Fibre LOS red LED; field team dispatched.",
+            internal_note="Check DP splitter port 4.",
+            user_role="Technical Officer",
+        ),
+    )
+    assert upd["updated"] is True
+    assert upd["ticket"]["status"] == "CONTACTED_CUSTOMER"
+    assert upd["ticket"]["assigned_officer"] == "Eng. Nimal Silva"
+    assert len(upd["ticket"]["officer_updates"]) >= 1
+
+    # 3. Customers (Existing or New) are blocked with HTTP 403 from Officer queue
+    for cust_role in ("Existing Customer", "New Customer"):
+        with pytest.raises(HTTPException) as exc_list:
+            officer_list_tickets(x_user_role=cust_role)
+        assert exc_list.value.status_code == 403
+
+        with pytest.raises(HTTPException) as exc_upd:
+            officer_update_ticket(
+                target_tid,
+                OfficerTicketUpdateRequest(
+                    status="RESOLVED",
+                    user_role=cust_role,
+                ),
+            )
+        assert exc_upd.value.status_code == 403
+
+
+
 
 

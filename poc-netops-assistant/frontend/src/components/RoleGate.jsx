@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserCheck, UserPlus, CheckCircle2, Lock, Shield, ArrowRight } from 'lucide-react';
+import { UserCheck, UserPlus, Wrench, CheckCircle2, Lock, Shield, ArrowRight } from 'lucide-react';
 
 export default function RoleGate({ onSelectRole }) {
   const [accountNumber, setAccountNumber] = useState('SLT-ACC-0112456789');
@@ -85,6 +85,36 @@ export default function RoleGate({ onSelectRole }) {
             onClick={() => onSelectRole('New Customer', '')}
           >
             Continue as New Customer <ArrowRight size={16} />
+          </button>
+        </div>
+
+        {/* Technical Officer Card */}
+        <div className="role-card officer">
+          <div>
+            <div className="role-icon-box amber">
+              <Wrench size={24} />
+            </div>
+            <h2>Technical Officer</h2>
+            <p className="role-desc">
+              For SLT field technicians and support officers managing customer fault tickets.
+            </p>
+            <ul className="feature-list">
+              <li>
+                <CheckCircle2 size={16} className="ok" /> Review All Customer Fault Tickets &amp; Diagnostics
+              </li>
+              <li>
+                <CheckCircle2 size={16} className="ok" /> Contact Customers (Call / SMS / Portal Updates)
+              </li>
+              <li>
+                <CheckCircle2 size={16} className="ok" /> Update Ticket Status, SLA &amp; NetOps SOP AI
+              </li>
+            </ul>
+          </div>
+          <button
+            className="btn btn-amber"
+            onClick={() => onSelectRole('Technical Officer', 'SLT-ACC-0112456789')}
+          >
+            Continue as Technical Officer <ArrowRight size={16} />
           </button>
         </div>
       </div>

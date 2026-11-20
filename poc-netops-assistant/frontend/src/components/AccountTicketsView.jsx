@@ -628,6 +628,21 @@ export default function AccountTicketsView({ userRole, accountNumber }) {
                     <span className="review-label">Description</span>
                     <div className="review-val">{selectedTicket.issue_description}</div>
                   </div>
+                  {selectedTicket.officer_updates?.length > 0 && (
+                    <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
+                      <span className="review-label">Updates from Technical Officer</span>
+                      <div className="timeline" style={{ marginTop: 6 }}>
+                        {selectedTicket.officer_updates.map((upd, idx) => (
+                          <div key={idx} className="timeline-item">
+                            <div className="timeline-meta">
+                              <strong>{upd.officer_name}</strong> · {upd.channel} · <code>{upd.status_change}</code>
+                            </div>
+                            {upd.message && <div className="timeline-msg">{upd.message}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
