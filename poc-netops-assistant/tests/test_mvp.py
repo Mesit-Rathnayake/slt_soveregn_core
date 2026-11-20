@@ -1196,4 +1196,65 @@ def test_new_customer_rbac_blocks_ticketing_and_account_overview():
     assert "Fiber Starter" in pkg_res["answer_markdown"]
 
 
+def test_fastapi_server_endpoints_and_rbac():
+    """Verifies FastAPI endpoints for the React frontend, including RBAC enforcement."""
+    import pytest
+    from fastapi import HTTPException
+    from api.server import (
+        health_check,
+        get_account,
+        create_ticket,
+        chat,
+        FaultTicketRequest,
+        ChatRequest,
+    )
+
+    # 1. Health check
+    h = health_check()
+    assert h["status"] == "healthy"
+    assert "slt_create_fault_ticket" in h["mcp_tools"]
+
+    # 2. Existing Customer can view account and create a ticket
+    acc_ok = get_account("0112456789", x_user_role="Existing Customer")
+    assert acc_ok["account_id"] == "SLT-ACC-0112456789"
+
+    tick_ok = create_ticket(
+        FaultTicketRequest(
+            account_number="SLT-ACC-0112456789",
+            service_type="Fibre",
+            issue_description="LOS red LED on router",
+            contact_number="071 234 5678",
+            user_role="Existing Customer",
+        )
+    )
+    assert tick_ok["ticket_id"].startswith("FLT-2026-")
+
+    # 3. New Customer gets HTTP 403 for account & ticket creation
+    with pytest.raises(HTTPException) as exc_acc:
+        get_account("0112456789", x_user_role="New Customer")
+    assert exc_acc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as exc_tick:
+        create_ticket(
+            FaultTicketRequest(
+                account_number="SLT-ACC-0112456789",
+                service_type="Fibre",
+                issue_description="No internet",
+                user_role="New Customer",
+            )
+        )
+    assert exc_tick.value.status_code == 403
+
+    # 4. New Customer CAN use /api/chat for package discovery
+    chat_ok = chat(
+        ChatRequest(
+            user_input="What Fibre packages are under Rs. 5,000?",
+            user_role="New Customer",
+            inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        )
+    )
+    assert "Fiber Starter" in chat_ok["answer_markdown"]
+
+
+
 
