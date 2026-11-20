@@ -13,6 +13,7 @@ if str(SRC_DIR) not in sys.path:
 from ingestion.sanitizer import SovereignDataSanitizer
 from retrieval.rag_engine import SovereignNetOpsRAG
 from retrieval.package_catalog import SLTPackageCatalog
+from retrieval.account_service import SLTCustomerAccountGateway
 from voice.voice_agent import SLTMobitelVoiceAgent
 
 
@@ -40,13 +41,15 @@ class SLTMCPToolServer:
         manuals_dir: Path | None = None,
         sanitizer: SovereignDataSanitizer | None = None,
         rag: SovereignNetOpsRAG | None = None,
-        package_catalog: SLTPackageCatalog | None = None
+        package_catalog: SLTPackageCatalog | None = None,
+        account_gateway: SLTCustomerAccountGateway | None = None
     ):
         self.manuals_dir = manuals_dir or (BASE_DIR / "data" / "approved_manuals")
         self.sanitizer = sanitizer or SovereignDataSanitizer()
         self.rag = rag or SovereignNetOpsRAG(manuals_dir=self.manuals_dir, enable_embeddings=False)
         catalog_file = self.manuals_dir / "slt_customer_kb_catalog.md"
         self.package_catalog = package_catalog or SLTPackageCatalog(catalog_file)
+        self.account_gateway = account_gateway or SLTCustomerAccountGateway(env_path=BASE_DIR / ".env")
 
     def list_tools(self) -> list[dict]:
         """Returns the MCP `tools/list` schema definitions."""
@@ -192,6 +195,69 @@ class SLTMCPToolServer:
                             "default": 6
                         }
                     }
+                }
+            },
+            {
+                "name": "slt_create_fault_ticket",
+                "description": (
+                    "Logs a customer support fault ticket for broadband, PEOTV, voice, or LTE issues. "
+                    "Available for Existing Customers to report physical faults, optical LOS, red lights, or line drops. "
+                    "Returns ticket reference ID, assigned regional maintenance team, and target SLA."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "account_number": {
+                            "type": "string",
+                            "description": "SLT Account number (e.g. SLT-ACC-0112456789) or subscriber phone number."
+                        },
+                        "service_type": {
+                            "type": "string",
+                            "enum": ["Fibre", "4G LTE", "PEOTV", "Copper Voice"],
+                            "description": "Affected SLTMobitel service category.",
+                            "default": "Fibre"
+                        },
+                        "issue_description": {
+                            "type": "string",
+                            "description": "Detailed description of the fault or alarm (e.g., 'LOS LED red, no internet')."
+                        },
+                        "contact_number": {
+                            "type": "string",
+                            "description": "Customer mobile phone number for technician follow-up."
+                        }
+                    },
+                    "required": ["issue_description"]
+                }
+            },
+            {
+                "name": "slt_get_account_profile",
+                "description": (
+                    "Retrieves customer account overview, subscribed package, data balance, "
+                    "billing status, and open fault tickets. Available for Existing Customers."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "account_number": {
+                            "type": "string",
+                            "description": "SLT Account number or subscriber telephone number.",
+                            "default": "0112456789"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "slt_get_ticket_status",
+                "description": "Checks the current progress, assigned team, and SLA for an existing SLT fault ticket.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "ticket_id": {
+                            "type": "string",
+                            "description": "Fault ticket reference ID (e.g. FLT-2026-1042)."
+                        }
+                    },
+                    "required": ["ticket_id"]
                 }
             }
         ]
@@ -350,6 +416,52 @@ class SLTMCPToolServer:
                 "isError": False,
                 "structuredContent": res,
                 "content": [{"type": "text", "text": text_md}]
+            }
+
+        if name == "slt_create_fault_ticket":
+            acc_num = str(args.get("account_number") or "SLT-ACC-0112456789")
+            svc_type = str(args.get("service_type") or "Fibre")
+            desc = str(args.get("issue_description") or "Customer reported connection issue")
+            contact = str(args.get("contact_number") or "")
+            res = self.account_gateway.create_fault_ticket(
+                identifier=acc_num,
+                service_type=svc_type,
+                issue_description=desc,
+                contact_number=contact if contact else None
+            )
+            return {
+                "isError": False,
+                "structuredContent": res,
+                "content": [{"type": "text", "text": res["summary_markdown"]}]
+            }
+
+        if name == "slt_get_account_profile":
+            acc_num = str(args.get("account_number") or "0112456789")
+            prof = self.account_gateway.get_account_profile(acc_num)
+            text_md = (
+                f"### Customer Account Overview (`{prof['account_id']}`)\n\n"
+                f"- **Customer Name:** {prof['customer_name']}\n"
+                f"- **Connection Status:** `{prof['connection_status']}`\n"
+                f"- **Subscribed Package:** {prof['subscribed_package']}\n"
+                f"- **Data Usage:** {prof['data_remaining_gb']} GB remaining of {prof['data_total_gb']} GB\n"
+                f"- **Current Bill:** Rs. {prof['current_balance_rs']:,.2f} (Due: {prof['bill_due_date']})\n"
+                f"- **Optical Rx Power:** {prof['optical_rx_power_dbm']} dBm (Normal Range)\n"
+                f"- **Open Tickets:** {prof['open_tickets_count']}\n\n"
+                f"*(Note: {prof['gateway_status']})*"
+            )
+            return {
+                "isError": False,
+                "structuredContent": prof,
+                "content": [{"type": "text", "text": text_md}]
+            }
+
+        if name == "slt_get_ticket_status":
+            tid = str(args.get("ticket_id") or "")
+            t_status = self.account_gateway.get_ticket_status(tid)
+            return {
+                "isError": False,
+                "structuredContent": t_status,
+                "content": [{"type": "text", "text": t_status["summary_markdown"]}]
             }
 
         return {

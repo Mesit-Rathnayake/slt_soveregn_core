@@ -12,7 +12,32 @@ class SovereignGovernanceManager:
     """
 
     ROLES = {
+        "Existing Customer": {
+            "can_log_fault_tickets": True,
+            "can_view_account_stats": True,
+            "can_analyze_incidents": False,
+            "can_search_sops": False,
+            "can_query_aws_kb": True,
+            "can_view_audit_logs": False,
+            "allowed_classifications": [
+                "SLTMobitel Public/Customer KB",
+                "Customer Account Self-Care"
+            ]
+        },
+        "New Customer": {
+            "can_log_fault_tickets": False,
+            "can_view_account_stats": False,
+            "can_analyze_incidents": False,
+            "can_search_sops": False,
+            "can_query_aws_kb": True,
+            "can_view_audit_logs": False,
+            "allowed_classifications": [
+                "SLTMobitel Public/Customer KB"
+            ]
+        },
         "Tier-1 NOC / Support Agent": {
+            "can_log_fault_tickets": True,
+            "can_view_account_stats": True,
             "can_analyze_incidents": True,
             "can_search_sops": True,
             "can_query_aws_kb": True,
@@ -20,6 +45,8 @@ class SovereignGovernanceManager:
             "allowed_classifications": ["Tier-1 Approved Technical Documentation", "SLTMobitel Public/Customer KB"]
         },
         "Tier-2 Core Engineer": {
+            "can_log_fault_tickets": True,
+            "can_view_account_stats": True,
             "can_analyze_incidents": True,
             "can_search_sops": True,
             "can_query_aws_kb": True,
@@ -31,6 +58,8 @@ class SovereignGovernanceManager:
             ]
         },
         "Sovereign Cloud Auditor": {
+            "can_log_fault_tickets": False,
+            "can_view_account_stats": True,
             "can_analyze_incidents": True,
             "can_search_sops": True,
             "can_query_aws_kb": True,

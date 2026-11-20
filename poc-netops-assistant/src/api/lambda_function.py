@@ -180,7 +180,8 @@ def lambda_handler(event: dict, context=None) -> dict:
             inference_engine=inference_engine,
             top_k=top_k,
             conversation_history=conversation_history,
-            bedrock_model=bedrock_model
+            bedrock_model=bedrock_model,
+            user_role=active_role
         )
 
         governance.log_event(

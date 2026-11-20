@@ -570,7 +570,8 @@ class SLTMobitelUnifiedAgent:
         aws_secret_access_key: str | None = None,
         kb_secret_override: str | None = None,
         kb_endpoint_override: str | None = None,
-        session_memory: dict | None = None
+        session_memory: dict | None = None,
+        user_role: str = "Existing Customer"
     ) -> dict:
         t0 = time.perf_counter()
         trace_steps = []
@@ -792,131 +793,321 @@ class SLTMobitelUnifiedAgent:
             handover_md = rep.get("draft_handover_summary", "")
             has_knowledge = "insufficient telemetry" not in severity.lower()
         else:
-            filter_params = self._parse_package_filter_query(
-                clean_user_input, active_memory.get("active_entity")
+            # Check Role-Based Access Control (RBAC) & Customer Segmentation
+            is_fault_ticketing = bool(re.search(
+                r"\b(?:log|create|raise|open|file|lodge|put|register)\s+(?:a\s+)?(?:fault|ticket|complaint)\b|"
+                r"\b(?:fault|support)\s+ticket\b|"
+                r"\b(?:log|create|raise|open|file)\s+(?:a\s+)?ticket\b|"
+                r"\b(?:lodge|make|file)\s+(?:a\s+)?complaint\b",
+                clean_user_input.lower()
+            ))
+            m_tid = re.search(r"\b(flt-2026-\d+)\b", clean_user_input.lower())
+            is_ticket_status = bool(m_tid) or (
+                "ticket" in clean_user_input.lower() and any(w in clean_user_input.lower() for w in ("status", "track", "check", "progress"))
             )
-            if filter_params:
-                if filter_params.get("category") in ("fibre", "lte", "peotv", "addons"):
-                    active_memory["active_entity"] = filter_params["category"]
-                    active_memory["active_topic"] = "customer_product_support"
-                mcp_tool_used = "slt_filter_packages"
-                trace_steps.append(
-                    f"Step 3 (MCP Tool `{mcp_tool_used}`): Filtered package catalog "
-                    f"(category={filter_params['category']}, max_price={filter_params['max_price']}, "
-                    f"min_speed={filter_params['min_speed_mbps']})."
-                )
-                mcp_rep = self.mcp_server.call_tool(mcp_tool_used, filter_params)
-                rep = mcp_rep["structuredContent"]
-                count = rep.get("count", 0)
-                bullets = rep.get("bullets", [])
+            is_account_req = bool(re.search(
+                r"\b(?:my\s+account|my\s+profile|my\s+bill\b|my\s+billing|account\s+status|account\s+details|account\s+overview|show\s+my\s+account|view\s+my\s+account)\b",
+                clean_user_input.lower()
+            )) and not any(w in clean_user_input.lower() for w in ("how do i", "how to", "ussd", "code"))
 
-                headline = "SLTMobitel Package Recommendations"
-                if count > 0:
+            if is_fault_ticketing:
+                if user_role == "New Customer":
+                    headline = "SLTMobitel Account Required"
                     answer_md = (
-                        f"Here are the SLTMobitel packages matching your criteria:\n\n"
-                        f"{rep['summary_markdown']}\n\n"
-                        f"You can subscribe or upgrade via the **MySLT App** (https://myslt.slt.lk/), "
-                        f"by calling **1212**, or visiting any SLT Teleshop."
+                        "Fault ticket creation requires an active SLTMobitel account. "
+                        "As a **New Customer**, you can explore our broadband and mobile packages, or contact **1212** "
+                        "to set up a new connection. If you already have an active account, please switch your profile "
+                        "to **Existing Customer** to log and track support tickets."
                     )
-                    key_points = bullets[:4]
+                    key_points = [
+                        "Fault ticket logging is available for Existing Customers with an active subscription.",
+                        "New customers can explore packages or register for a new connection at https://myslt.slt.lk/ or 1212."
+                    ]
+                    has_knowledge = True
+                    severity = "KB_INFO"
+                    confidence = "HIGH"
+                    esc_req = False
+                    esc_target = "Customer Registration / 1212"
+                    citations = ["SLTMobitel Customer Care Policy (RBAC Authorization)"]
+                    chunks = []
+                    engine_used = "RBAC_ACCESS_CONTROL"
+                    mcp_tool_used = "slt_create_fault_ticket (blocked_by_rbac)"
+                    handover_md = ""
                 else:
+                    svc_type = "Fibre"
+                    if active_memory.get("active_entity") in ("fibre", "lte", "peotv"):
+                        svc_type = active_memory.get("active_entity").capitalize()
+                    elif "peotv" in clean_user_input.lower():
+                        svc_type = "PEOTV"
+                    elif "lte" in clean_user_input.lower() or "4g" in clean_user_input.lower():
+                        svc_type = "4G LTE"
+                    elif "copper" in clean_user_input.lower() or "voice" in clean_user_input.lower() or "landline" in clean_user_input.lower():
+                        svc_type = "Copper Voice"
+
+                    issue_desc = clean_user_input
+                    if "context:" in clean_text.lower():
+                        issue_desc = clean_text
+
+                    mcp_tool_used = "slt_create_fault_ticket"
+                    trace_steps.append(f"Step 3 (MCP Tool `{mcp_tool_used}`): Logging fault ticket for {svc_type}.")
+                    mcp_rep = self.mcp_server.call_tool(
+                        mcp_tool_used,
+                        {
+                            "account_number": "SLT-ACC-0112456789",
+                            "service_type": svc_type,
+                            "issue_description": issue_desc,
+                            "contact_number": "071 234 5678"
+                        }
+                    )
+                    rep = mcp_rep["structuredContent"]
+                    headline = "Fault Ticket Logged"
+                    answer_md = rep["summary_markdown"]
+                    key_points = [
+                        f"Ticket Reference: `{rep['ticket_id']}`",
+                        f"Assigned Team: {rep['ticket_details']['assigned_team']}",
+                        f"Target SLA: {rep['ticket_details']['target_sla']}"
+                    ]
+                    has_knowledge = True
+                    severity = "KB_HIGH"
+                    confidence = "HIGH"
+                    esc_req = False
+                    esc_target = f"Ticket {rep['ticket_id']}"
+                    citations = ["SLTMobitel Customer Service Management System (CSM)"]
+                    chunks = [{
+                        "text": rep["summary_markdown"],
+                        "title": "SLT CSM Fault Ticketing",
+                        "source": "slt_customer_service_management"
+                    }]
+                    engine_used = "STRUCTURED_FAULT_TICKET"
+                    handover_md = ""
+
+            elif is_ticket_status:
+                if user_role == "New Customer":
+                    headline = "SLTMobitel Account Required"
                     answer_md = (
-                        "No packages were found matching your criteria. "
-                        "Please adjust your budget or speed requirements, or contact SLTMobitel at **1212** "
-                        "for tailored solutions."
+                        "Fault ticket tracking is reserved for existing account holders. "
+                        "Please authenticate or switch to the **Existing Customer** profile to check ticket progress."
                     )
-                    key_points = ["No packages matched the specified filter criteria."]
+                    key_points = ["Ticket status tracking is available for Existing Customers."]
+                    has_knowledge = True
+                    severity = "KB_INFO"
+                    confidence = "HIGH"
+                    esc_req = False
+                    esc_target = "1212 Support"
+                    citations = ["SLTMobitel Customer Care Policy (RBAC Authorization)"]
+                    chunks = []
+                    engine_used = "RBAC_ACCESS_CONTROL"
+                    mcp_tool_used = "slt_get_ticket_status (blocked_by_rbac)"
+                    handover_md = ""
+                else:
+                    tid = m_tid.group(1).upper() if m_tid else "FLT-2026-1042"
+                    mcp_tool_used = "slt_get_ticket_status"
+                    trace_steps.append(f"Step 3 (MCP Tool `{mcp_tool_used}`): Checking status for `{tid}`.")
+                    mcp_rep = self.mcp_server.call_tool(mcp_tool_used, {"ticket_id": tid})
+                    rep = mcp_rep["structuredContent"]
+                    headline = "Ticket Progress Tracking"
+                    answer_md = rep["summary_markdown"]
+                    key_points = [f"Ticket `{tid}` status verified."]
+                    has_knowledge = True
+                    severity = "KB_HIGH"
+                    confidence = "HIGH"
+                    esc_req = False
+                    esc_target = f"Ticket {tid}"
+                    citations = ["SLTMobitel Customer Service Management System (CSM)"]
+                    chunks = [{
+                        "text": rep["summary_markdown"],
+                        "title": "SLT CSM Fault Ticketing",
+                        "source": "slt_customer_service_management"
+                    }]
+                    engine_used = "STRUCTURED_TICKET_TRACKING"
+                    handover_md = ""
 
-                has_knowledge = True
-                severity = "KB_HIGH"
-                confidence = "HIGH"
-                esc_req = False
-                esc_target = "Customer Support 1212 / MySLT App"
-                citations = ["slt_customer_kb_catalog.md (Verified Product Catalog)"]
-                chunks = [{
-                    "text": rep.get("summary_markdown", "") or "No packages found",
-                    "title": "SLT Customer KB Catalog",
-                    "source": "slt_customer_kb_catalog.md",
-                    "score": 0.90
-                }]
-                engine_used = "STRUCTURED_PACKAGE_FILTER"
-                handover_md = ""
+            elif is_account_req:
+                if user_role == "New Customer":
+                    headline = "SLTMobitel Account Required"
+                    answer_md = (
+                        "Account details and usage stats are available for registered subscribers. "
+                        "As a **New Customer**, you can explore our Fibre, LTE, and PEOTV plans, or call **1212** "
+                        "to order a new connection."
+                    )
+                    key_points = [
+                        "Account overview and data stats require an active SLTMobitel subscription.",
+                        "Explore available packages or sign up at https://myslt.slt.lk/."
+                    ]
+                    has_knowledge = True
+                    severity = "KB_INFO"
+                    confidence = "HIGH"
+                    esc_req = False
+                    esc_target = "Customer Registration / 1212"
+                    citations = ["SLTMobitel Customer Care Policy (RBAC Authorization)"]
+                    chunks = []
+                    engine_used = "RBAC_ACCESS_CONTROL"
+                    mcp_tool_used = "slt_get_account_profile (blocked_by_rbac)"
+                    handover_md = ""
+                else:
+                    mcp_tool_used = "slt_get_account_profile"
+                    trace_steps.append(f"Step 3 (MCP Tool `{mcp_tool_used}`): Fetching account profile.")
+                    mcp_rep = self.mcp_server.call_tool(mcp_tool_used, {"account_number": "SLT-ACC-0112456789"})
+                    rep = mcp_rep["structuredContent"]
+                    headline = f"Account Overview ({rep['account_id']})"
+                    answer_md = (
+                        f"### Account Profile & Connection Overview\n\n"
+                        f"- **Account Number:** `{rep['account_id']}`\n"
+                        f"- **Customer Name:** {rep['customer_name']}\n"
+                        f"- **Connection Status:** `{rep['connection_status']}`\n"
+                        f"- **Subscribed Package:** {rep['subscribed_package']}\n"
+                        f"- **Data Balance:** {rep['data_remaining_gb']} GB remaining of {rep['data_total_gb']} GB\n"
+                        f"- **Current Bill:** Rs. {rep['current_balance_rs']:,.2f} (Due: {rep['bill_due_date']})\n"
+                        f"- **Optical Rx Power:** {rep['optical_rx_power_dbm']} dBm\n"
+                        f"- **Open Support Tickets:** {rep['open_tickets_count']}\n\n"
+                        f"*(Status: {rep['gateway_status']})*"
+                    )
+                    key_points = [
+                        f"Package: {rep['subscribed_package']}",
+                        f"Status: {rep['connection_status']}",
+                        f"Data: {rep['data_remaining_gb']} GB / {rep['data_total_gb']} GB",
+                        f"Bill: Rs. {rep['current_balance_rs']:,.2f}"
+                    ]
+                    has_knowledge = True
+                    severity = "KB_HIGH"
+                    confidence = "HIGH"
+                    esc_req = False
+                    esc_target = "MySLT Self-Care"
+                    citations = ["SLTMobitel Customer Data Gateway (Awaiting Live CRM Key)"]
+                    chunks = [{
+                        "text": answer_md,
+                        "title": "SLT Customer Account Profile",
+                        "source": "slt_customer_data_gateway"
+                    }]
+                    engine_used = "CUSTOMER_ACCOUNT_GATEWAY"
+                    handover_md = ""
+
             else:
-                mcp_tool_used = "slt_query_cloud_kb"
-                trace_steps.append(
-                    f"Step 3 (MCP Tool `{mcp_tool_used}`): Queried SLTMobitel CloudFront / API Gateway KnowledgeBase (top_k={top_k})."
+                filter_params = self._parse_package_filter_query(
+                    clean_user_input, active_memory.get("active_entity")
                 )
-                mcp_rep = self.mcp_server.call_tool(
-                    mcp_tool_used,
-                    {
-                        "sanitized_query": clean_text,
-                        "retrieval_query": retrieval_query,
-                        "top_k": top_k,
-                        "inference_engine": inference_engine,
-                        "ollama_model": ollama_model,
-                        "gemini_api_key": gemini_api_key,
-                        "bedrock_model": bedrock_model,
-                        "aws_region": aws_region,
-                        "aws_access_key_id": aws_access_key_id,
-                        "aws_secret_access_key": aws_secret_access_key,
-                        "kb_secret_override": kb_secret_override,
-                        "kb_endpoint_override": kb_endpoint_override
-                    }
-                )
-                rep = mcp_rep["structuredContent"]
-                if rep.get("kb_api_error"):
-                    warnings_list.append(rep["kb_api_error"])
-                if rep.get("llm_fallback_warning"):
-                    warnings_list.append(rep["llm_fallback_warning"])
-
-                # Prevent the deterministic fallback from repeating the exact same answer across consecutive turns
-                if conversation_history and rep.get("inference_mode") == "AWS_KB_DIRECT_SYNTHESIS":
-                    recent_answers = {
-                        t.get("agent_response", {}).get("answer_markdown", "").strip()
-                        for t in conversation_history[-2:]
-                    }
-                    normalized_current_input = re.sub(
-                        r"[^a-z0-9]+", " ", clean_user_input.lower()
-                    ).strip()
-                    repeated_user_input = any(
-                        re.sub(
-                            r"[^a-z0-9]+", " ",
-                            (t.get("user_input") or "").lower()
-                        ).strip() == normalized_current_input
-                        for t in conversation_history[-2:]
+                if filter_params:
+                    if filter_params.get("category") in ("fibre", "lte", "peotv", "addons"):
+                        active_memory["active_entity"] = filter_params["category"]
+                        active_memory["active_topic"] = "customer_product_support"
+                    mcp_tool_used = "slt_filter_packages"
+                    trace_steps.append(
+                        f"Step 3 (MCP Tool `{mcp_tool_used}`): Filtered package catalog "
+                        f"(category={filter_params['category']}, max_price={filter_params['max_price']}, "
+                        f"min_speed={filter_params['min_speed_mbps']})."
                     )
-                    # Only escalate repeated *troubleshooting* answers; repeated factual answers (loans, USSD, packages) stay as-is
-                    ans_l = rep["answer"].strip().lower()
-                    is_troubleshooting_answer = any(k in ans_l for k in ("troubleshoot", "router", "wi-fi", "connection"))
-                    if (
-                        repeated_user_input
-                        and is_troubleshooting_answer
-                        and rep["answer"].strip() in recent_answers
-                    ):
-                        rep["has_enough_knowledge"] = True
-                        rep["answer"] = (
-                            "Since you have already checked those initial steps, here are the **remaining verification "
-                            "and support escalation steps**:"
-                        )
-                        rep["key_points"] = [
-                            "**1. Verify `WLAN` & `GPON` LEDs:** Ensure `WLAN` is ON (press the **Wi-Fi / WLAN** button if OFF) and `GPON` is **solid green**.",
-                            "**2. Check Data Quota (`MySLT App` / `#170#` / `#1456#`):** Open **MySLT App → Internet → Data Remaining** (`https://myslt.slt.lk/`) to confirm your package quota is not exceeded.",
-                            "**3. Cables, Wi-Fi Password & Restart:** Check that telephone/Fibre and Ethernet cables are tightly connected, restart the router, and change your Wi-Fi password if speed is slow.",
-                            "**4. Contact SLTMobitel Support:** Call **`1212`** (Fixed/Fibre/PEOTV) or **`1717`** (Mobile), or log a fault ticket via the **MySLT App**."
-                        ]
+                    mcp_rep = self.mcp_server.call_tool(mcp_tool_used, filter_params)
+                    rep = mcp_rep["structuredContent"]
+                    count = rep.get("count", 0)
+                    bullets = rep.get("bullets", [])
 
-                has_knowledge = bool(rep.get("has_enough_knowledge", True))
-                headline = "AI Assistant"
-                answer_md = rep["answer"]
-                key_points = rep["key_points"]
-                severity = f"KB_{rep['confidence']}"
-                confidence = rep["confidence"]
-                esc_req = False
-                esc_target = rep.get("follow_up_suggestion", "")
-                citations = rep["citations"]
-                chunks = rep["retrieved_chunks"]
-                engine_used = rep["inference_mode"]
-                handover_md = ""
+                    headline = "SLTMobitel Package Recommendations"
+                    if count > 0:
+                        answer_md = (
+                            f"Here are the SLTMobitel packages matching your criteria:\n\n"
+                            f"{rep['summary_markdown']}\n\n"
+                            f"You can subscribe or upgrade via the **MySLT App** (https://myslt.slt.lk/), "
+                            f"by calling **1212**, or visiting any SLT Teleshop."
+                        )
+                        key_points = bullets[:4]
+                    else:
+                        answer_md = (
+                            "No packages were found matching your criteria. "
+                            "Please adjust your budget or speed requirements, or contact SLTMobitel at **1212** "
+                            "for tailored solutions."
+                        )
+                        key_points = ["No packages matched the specified filter criteria."]
+
+                    has_knowledge = True
+                    severity = "KB_HIGH"
+                    confidence = "HIGH"
+                    esc_req = False
+                    esc_target = "Customer Support 1212 / MySLT App"
+                    citations = ["slt_customer_kb_catalog.md (Verified Product Catalog)"]
+                    chunks = [{
+                        "text": rep.get("summary_markdown", "") or "No packages found",
+                        "title": "SLT Customer KB Catalog",
+                        "source": "slt_customer_kb_catalog.md",
+                        "score": 0.90
+                    }]
+                    engine_used = "STRUCTURED_PACKAGE_FILTER"
+                    handover_md = ""
+                else:
+                    mcp_tool_used = "slt_query_cloud_kb"
+                    trace_steps.append(
+                        f"Step 3 (MCP Tool `{mcp_tool_used}`): Queried SLTMobitel CloudFront / API Gateway KnowledgeBase (top_k={top_k})."
+                    )
+                    mcp_rep = self.mcp_server.call_tool(
+                        mcp_tool_used,
+                        {
+                            "sanitized_query": clean_text,
+                            "retrieval_query": retrieval_query,
+                            "top_k": top_k,
+                            "inference_engine": inference_engine,
+                            "ollama_model": ollama_model,
+                            "gemini_api_key": gemini_api_key,
+                            "bedrock_model": bedrock_model,
+                            "aws_region": aws_region,
+                            "aws_access_key_id": aws_access_key_id,
+                            "aws_secret_access_key": aws_secret_access_key,
+                            "kb_secret_override": kb_secret_override,
+                            "kb_endpoint_override": kb_endpoint_override
+                        }
+                    )
+                    rep = mcp_rep["structuredContent"]
+                    if rep.get("kb_api_error"):
+                        warnings_list.append(rep["kb_api_error"])
+                    if rep.get("llm_fallback_warning"):
+                        warnings_list.append(rep["llm_fallback_warning"])
+
+                    # Prevent the deterministic fallback from repeating the exact same answer across consecutive turns
+                    if conversation_history and rep.get("inference_mode") == "AWS_KB_DIRECT_SYNTHESIS":
+                        recent_answers = {
+                            t.get("agent_response", {}).get("answer_markdown", "").strip()
+                            for t in conversation_history[-2:]
+                        }
+                        normalized_current_input = re.sub(
+                            r"[^a-z0-9]+", " ", clean_user_input.lower()
+                        ).strip()
+                        repeated_user_input = any(
+                            re.sub(
+                                r"[^a-z0-9]+", " ",
+                                (t.get("user_input") or "").lower()
+                            ).strip() == normalized_current_input
+                            for t in conversation_history[-2:]
+                        )
+                        # Only escalate repeated *troubleshooting* answers; repeated factual answers (loans, USSD, packages) stay as-is
+                        ans_l = rep["answer"].strip().lower()
+                        is_troubleshooting_answer = any(k in ans_l for k in ("troubleshoot", "router", "wi-fi", "connection"))
+                        if (
+                            repeated_user_input
+                            and is_troubleshooting_answer
+                            and rep["answer"].strip() in recent_answers
+                        ):
+                            rep["has_enough_knowledge"] = True
+                            rep["answer"] = (
+                                "Since you have already checked those initial steps, here are the **remaining verification "
+                                "and support escalation steps**:"
+                            )
+                            rep["key_points"] = [
+                                "**1. Verify `WLAN` & `GPON` LEDs:** Ensure `WLAN` is ON (press the **Wi-Fi / WLAN** button if OFF) and `GPON` is **solid green**.",
+                                "**2. Check Data Quota (`MySLT App` / `#170#` / `#1456#`):** Open **MySLT App → Internet → Data Remaining** (`https://myslt.slt.lk/`) to confirm your package quota is not exceeded.",
+                                "**3. Cables, Wi-Fi Password & Restart:** Check that telephone/Fibre and Ethernet cables are tightly connected, restart the router, and change your Wi-Fi password if speed is slow.",
+                                "**4. Contact SLTMobitel Support:** Call **`1212`** (Fixed/Fibre/PEOTV) or **`1717`** (Mobile), or log a fault ticket via the **MySLT App**."
+                            ]
+
+                    has_knowledge = bool(rep.get("has_enough_knowledge", True))
+                    headline = "AI Assistant"
+                    answer_md = rep["answer"]
+                    key_points = rep["key_points"]
+                    severity = f"KB_{rep['confidence']}"
+                    confidence = rep["confidence"]
+                    esc_req = False
+                    esc_target = rep.get("follow_up_suggestion", "")
+                    citations = rep["citations"]
+                    chunks = rep["retrieved_chunks"]
+                    engine_used = rep["inference_mode"]
+                    handover_md = ""
 
         trace_steps.append(
             f"🧠 **Step 4 (Synthesis Engine):** Generated grounded response via `{engine_used}` using `{len(chunks)}` retrieved chunk(s)."

@@ -251,6 +251,19 @@ with st.sidebar:
     enable_voice_agent = st.toggle("Auto-play voice responses", value=False)
 
     st.divider()
+    st.caption("USER PROFILE & ACCESS LEVEL")
+    active_role = st.selectbox(
+        "Active Role",
+        options=list(SovereignGovernanceManager.ROLES.keys()),
+        index=0,
+        help="Switch between Existing Customer (fault ticketing & account stats), New Customer (general packages & coverage), or NOC Engineering."
+    )
+    if active_role == "Existing Customer":
+        st.info("👤 **Subscriber:** `SLT-ACC-0112456789` (Fibre Flash 25)\n\nFault ticketing & account stats enabled.")
+    elif active_role == "New Customer":
+        st.info("👋 **New Customer (Visitor):** Package discovery & general AI assistant. Fault ticketing restricted.")
+
+    st.divider()
     st.caption("NETWORK INCIDENT SCENARIOS")
     raw_files = sorted(incidents_dir.glob("*_raw.txt"))
     file_map = {f.name.replace("_raw.txt", "").replace("_", " ").title(): f for f in raw_files}
@@ -293,11 +306,6 @@ with st.sidebar:
         selected_route = route_choice.split()[0]
         kb_top_k = st.slider("Retrieved Chunks", 1, 5, 3)
         show_dev_details = st.checkbox("Show retrieved sources", value=False)
-        active_role = st.selectbox(
-            "Role",
-            options=list(SovereignGovernanceManager.ROLES.keys()),
-            index=1
-        )
         cf_metrics = agent.rag.aws_kb_client.cloudfront.metrics
         st.caption(
             f"Edge Cache: {cf_metrics['cache_hits']} hits · {cf_metrics['cache_misses']} fetches"
@@ -446,7 +454,8 @@ if active_user_message:
                 top_k=kb_top_k,
                 conversation_history=st.session_state.chat_history,
                 session_memory=st.session_state.session_memory,
-                bedrock_model=bedrock_model_input
+                bedrock_model=bedrock_model_input,
+                user_role=active_role
             )
             turn_res["from_voice_input"] = is_voice_turn
             governance.log_event(

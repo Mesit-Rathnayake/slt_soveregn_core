@@ -13,6 +13,7 @@ from retrieval.rag_engine import SovereignNetOpsRAG
 from retrieval.aws_kb_client import SLTMobitelCloudKBClient
 from mcp.slt_mcp_server import SLTMCPToolServer
 from agent.guardrails_evals import SovereignGuardrailsAndEvals
+from agent.governance import SovereignGovernanceManager
 from agent.orchestrator import SLTMobitelUnifiedAgent
 
 
@@ -1107,5 +1108,92 @@ def test_slt_filter_packages_orchestrator_routing_and_multiturn():
     assert ood_res["mcp_tool_called"] != "slt_filter_packages"
     assert ood_res["has_enough_knowledge"] is False
     assert "don't have enough knowledge" in ood_res["answer_markdown"].lower()
+
+
+def test_role_based_access_control_customer_segmentation():
+    """Verifies RBAC rules in SovereignGovernanceManager for Existing vs New Customers."""
+    audit_file = BASE_DIR / "data" / "audit_trail.jsonl"
+    gov = SovereignGovernanceManager(audit_log_path=audit_file)
+
+    # Existing Customer permissions
+    assert gov.check_permission("Existing Customer", "can_log_fault_tickets") is True
+    assert gov.check_permission("Existing Customer", "can_view_account_stats") is True
+    assert gov.check_permission("Existing Customer", "can_query_aws_kb") is True
+    assert gov.check_permission("Existing Customer", "can_analyze_incidents") is False
+
+    # New Customer permissions
+    assert gov.check_permission("New Customer", "can_log_fault_tickets") is False
+    assert gov.check_permission("New Customer", "can_view_account_stats") is False
+    assert gov.check_permission("New Customer", "can_query_aws_kb") is True
+    assert gov.check_permission("New Customer", "can_analyze_incidents") is False
+
+
+def test_fault_ticket_creation_and_mcp_tools():
+    """Verifies that Existing Customers can log fault tickets and view account stats via MCP tools."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    # 1. Existing Customer creates a fault ticket for optical LOS
+    res = agent.run_agent(
+        "Please log a fault ticket: my Fibre connection has red LOS light and no internet",
+        user_role="Existing Customer"
+    )
+    assert res["mcp_tool_called"] == "slt_create_fault_ticket"
+    assert res["has_enough_knowledge"] is True
+    assert "FLT-2026-" in res["answer_markdown"]
+    assert "Fibre" in res["answer_markdown"]
+    assert "CRITICAL / HIGH" in res["answer_markdown"]
+
+    # 2. Existing Customer checks ticket status
+    t_num = [k for k in res["key_points"] if "FLT-2026-" in k][0].split("`")[1]
+    status_res = agent.run_agent(
+        f"What is the status of ticket {t_num}?",
+        user_role="Existing Customer"
+    )
+    assert status_res["mcp_tool_called"] == "slt_get_ticket_status"
+    assert status_res["has_enough_knowledge"] is True
+    assert t_num in status_res["answer_markdown"]
+
+    # 3. Existing Customer views account profile
+    acc_res = agent.run_agent("Show my account status", user_role="Existing Customer")
+    assert acc_res["mcp_tool_called"] == "slt_get_account_profile"
+    assert acc_res["has_enough_knowledge"] is True
+    assert "SLT-ACC-" in acc_res["answer_markdown"]
+    assert "Fibre Flash 25" in acc_res["answer_markdown"]
+
+
+def test_new_customer_rbac_blocks_ticketing_and_account_overview():
+    """Verifies that New Customers are blocked from fault ticketing and guided to package discovery."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    # 1. New Customer attempting to log a fault ticket
+    blocked_ticket = agent.run_agent(
+        "I want to log a fault ticket for my router",
+        user_role="New Customer"
+    )
+    assert blocked_ticket["inference_mode"] == "RBAC_ACCESS_CONTROL"
+    assert "blocked_by_rbac" in blocked_ticket["mcp_tool_called"]
+    assert "active sltmobitel account" in blocked_ticket["answer_markdown"].lower()
+    assert "new customer" in blocked_ticket["answer_markdown"].lower()
+
+    # 2. New Customer attempting to view private account profile
+    blocked_acc = agent.run_agent(
+        "Show my account details",
+        user_role="New Customer"
+    )
+    assert blocked_acc["inference_mode"] == "RBAC_ACCESS_CONTROL"
+    assert "blocked_by_rbac" in blocked_acc["mcp_tool_called"]
+    assert "registered subscribers" in blocked_acc["answer_markdown"].lower()
+
+    # 3. New Customer CAN still ask general package and technical questions
+    pkg_res = agent.run_agent(
+        "What Fibre packages are under Rs. 5,000?",
+        user_role="New Customer"
+    )
+    assert pkg_res["mcp_tool_called"] == "slt_filter_packages"
+    assert pkg_res["has_enough_knowledge"] is True
+    assert "Fiber Starter" in pkg_res["answer_markdown"]
+
 
 
