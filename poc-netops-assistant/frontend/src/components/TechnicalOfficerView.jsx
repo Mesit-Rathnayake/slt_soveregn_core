@@ -20,7 +20,7 @@ const QUICK_MESSAGES = [
   'We have resolved the issue and verified stable signal levels. Please restart your router and confirm connectivity.',
 ];
 
-export default function TechnicalOfficerView({ userRole }) {
+export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'Eng. Nimal Silva' }) {
   const [tickets, setTickets] = useState([]);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,7 @@ export default function TechnicalOfficerView({ userRole }) {
   const [selectedId, setSelectedId] = useState(null);
 
   // Officer Action Form
-  const [officerName, setOfficerName] = useState('Eng. Nimal Silva');
+  const [officerName, setOfficerName] = useState(defaultOfficerName);
   const [newStatus, setNewStatus] = useState('CONTACTED_CUSTOMER');
   const [channel, setChannel] = useState('Phone Call');
   const [customerMessage, setCustomerMessage] = useState('');

@@ -47,10 +47,10 @@ const QUICK_PROMPTS = {
     'How do I check my SLTMobitel data balance?',
   ],
   staff: [
-    'What Fibre packages are under Rs. 5,000?',
     'INCIDENT TICKET: INC-2026-1042 | AFFECTED NODE: SLT-CORE-PE-CMB-01 (172.16.45.128). BGP-5-ADJCHANGE link flapped 7 times. Optical Rx Power measured at -21.4 dBm.',
-    'How to see active packages',
-    'Show my account status',
+    'INCIDENT TICKET: INC-2026-1088 | AFFECTED NODE: SLT-METRO-AGG-KDY-02. OSPF neighbor stuck in EXSTART state. Local MTU 9198, peer MTU 1500.',
+    'What Fibre packages are under Rs. 5,000?',
+    'How do I restart or troubleshoot a GPON router with red LOS LED?',
   ],
 };
 

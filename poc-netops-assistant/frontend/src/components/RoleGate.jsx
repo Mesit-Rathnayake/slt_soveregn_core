@@ -11,6 +11,8 @@ const SERVICE_SEGMENTS = [
 export default function RoleGate({ onSelectRole }) {
   const [accountNumber, setAccountNumber] = useState('SLT-ACC-0112456789');
   const [serviceSegment, setServiceSegment] = useState('Fibre');
+  const [officerName, setOfficerName] = useState('Eng. Nimal Silva');
+  const [officerId, setOfficerId] = useState('SLT-TO-4021');
 
   return (
     <div className="gate-container">
@@ -134,10 +136,35 @@ export default function RoleGate({ onSelectRole }) {
                 <CheckCircle2 size={16} className="ok" /> Update Ticket Status, SLA &amp; NetOps SOP AI
               </li>
             </ul>
+            <div className="account-input-group">
+              <label htmlFor="officer-name-input">Officer Name &amp; Staff ID</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 6 }}>
+                <input
+                  id="officer-name-input"
+                  type="text"
+                  value={officerName}
+                  onChange={(e) => setOfficerName(e.target.value)}
+                  placeholder="Eng. Nimal Silva"
+                />
+                <input
+                  type="text"
+                  value={officerId}
+                  onChange={(e) => setOfficerId(e.target.value)}
+                  placeholder="SLT-TO-4021"
+                />
+              </div>
+            </div>
           </div>
           <button
             className="btn btn-amber"
-            onClick={() => onSelectRole('Technical Officer', 'SLT-ACC-0112456789')}
+            onClick={() =>
+              onSelectRole(
+                'Technical Officer',
+                officerId || 'SLT-TO-4021',
+                'All',
+                officerName || 'Eng. Nimal Silva'
+              )
+            }
           >
             Continue as Technical Officer <ArrowRight size={16} />
           </button>

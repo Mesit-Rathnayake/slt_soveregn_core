@@ -18,6 +18,7 @@ export default function App() {
   const [userRole, setUserRole] = useState(null); // null => show RoleGate screen first
   const [accountNumber, setAccountNumber] = useState('SLT-ACC-0112456789');
   const [serviceSegment, setServiceSegment] = useState('Fibre');
+  const [officerName, setOfficerName] = useState('Eng. Nimal Silva');
   const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [sessionMemory, setSessionMemory] = useState({});
@@ -27,9 +28,10 @@ export default function App() {
     role === 'Tier-1 NOC / Support Agent' ||
     role === 'Tier-2 Core Engineer';
 
-  const handleSelectRole = (role, accNum, segment) => {
+  const handleSelectRole = (role, idVal, segment, staffName) => {
     setUserRole(role);
-    if (accNum) setAccountNumber(accNum);
+    if (role === 'Existing Customer' && idVal) setAccountNumber(idVal);
+    if (staffName) setOfficerName(staffName);
     setServiceSegment(segment || 'Fibre');
     setActiveTab(role === 'Technical Officer' ? 'officer' : 'chat');
     setMessages([]);
@@ -98,6 +100,8 @@ export default function App() {
             <RoleIcon size={14} />{' '}
             {userRole === 'Existing Customer'
               ? `${serviceSegment === 'Mobile' ? 'SLT Mobitel' : serviceSegment} Customer`
+              : userRole === 'Technical Officer'
+              ? `${officerName} · Technical Officer`
               : userRole}
           </span>
           <button className="switch-role-btn" onClick={() => setUserRole(null)}>
@@ -109,7 +113,7 @@ export default function App() {
 
       <main className="main-content">
         {activeTab === 'officer' && canManageTickets ? (
-          <TechnicalOfficerView userRole={userRole} />
+          <TechnicalOfficerView userRole={userRole} defaultOfficerName={officerName} />
         ) : activeTab === 'account' && canUseAccountPortal ? (
           <AccountTicketsView
             userRole={userRole}
