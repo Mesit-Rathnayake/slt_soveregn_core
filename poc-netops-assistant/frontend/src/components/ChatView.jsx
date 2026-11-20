@@ -221,15 +221,18 @@ export default function ChatView({
 
                     <MarkdownText text={res.answer_markdown} />
 
-                    {res.key_points && res.key_points.length > 0 && res.has_enough_knowledge !== false && (
-                      <ul className="key-points">
-                        {res.key_points.map((kp, kIdx) => (
-                          <li key={kIdx}>
-                            <MarkdownText text={kp} />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    {res.key_points &&
+                      res.key_points.length > 0 &&
+                      res.has_enough_knowledge !== false &&
+                      !(res.answer_markdown || '').includes('\n- ') && (
+                        <ul className="key-points">
+                          {res.key_points.map((kp, kIdx) => (
+                            <li key={kIdx}>
+                              <MarkdownText text={kp} />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
 
                     {res.spoken_response && (
                       <div className="msg-meta" style={{ justifyContent: 'flex-end' }}>

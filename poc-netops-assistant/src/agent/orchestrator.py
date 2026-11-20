@@ -806,7 +806,9 @@ class SLTMobitelUnifiedAgent:
                 "ticket" in clean_user_input.lower() and any(w in clean_user_input.lower() for w in ("status", "track", "check", "progress"))
             )
             is_account_req = bool(re.search(
-                r"\b(?:my\s+account|my\s+profile|my\s+bill\b|my\s+billing|account\s+status|account\s+details|account\s+overview|show\s+my\s+account|view\s+my\s+account)\b",
+                r"\b(?:my\s+account|my\s+profile|my\s+bill\b|my\s+billing|account\s+status|account\s+details|account\s+overview|show\s+my\s+account|view\s+my\s+account)\b|"
+                r"\b(?:can\s+you\s+check|please\s+check|check)\s+my\s+(?:data\s+)?(?:quota|balance|usage|bill)\b|"
+                r"\b(?:how\s+much\s+(?:data|quota)\s+do\s+i\s+have|what\s+is\s+my\s+(?:remaining\s+)?(?:data|quota|balance|bill))\b",
                 clean_user_input.lower()
             )) and not any(w in clean_user_input.lower() for w in ("how do i", "how to", "ussd", "code"))
 
@@ -949,30 +951,46 @@ class SLTMobitelUnifiedAgent:
                     trace_steps.append(f"Step 3 (MCP Tool `{mcp_tool_used}`): Fetching account profile.")
                     mcp_rep = self.mcp_server.call_tool(mcp_tool_used, {"account_number": "SLT-ACC-0112456789"})
                     rep = mcp_rep["structuredContent"]
-                    headline = f"Account Overview ({rep['account_id']})"
-                    answer_md = (
-                        f"### Account Profile & Connection Overview\n\n"
-                        f"- **Account Number:** `{rep['account_id']}`\n"
-                        f"- **Customer Name:** {rep['customer_name']}\n"
-                        f"- **Connection Status:** `{rep['connection_status']}`\n"
-                        f"- **Subscribed Package:** {rep['subscribed_package']}\n"
-                        f"- **Data Balance:** {rep['data_remaining_gb']} GB remaining of {rep['data_total_gb']} GB\n"
-                        f"- **Current Bill:** Rs. {rep['current_balance_rs']:,.2f} (Due: {rep['bill_due_date']})\n"
-                        f"- **Optical Rx Power:** {rep['optical_rx_power_dbm']} dBm\n"
-                        f"- **Open Support Tickets:** {rep['open_tickets_count']}"
+                    asks_quota_only = bool(re.search(r"\b(?:quota|data|usage|balance)\b", clean_user_input.lower())) and not bool(
+                        re.search(r"\b(?:account|profile|overview|status|details)\b", clean_user_input.lower())
                     )
-                    key_points = [
-                        f"Package: {rep['subscribed_package']}",
-                        f"Status: {rep['connection_status']}",
-                        f"Data: {rep['data_remaining_gb']} GB / {rep['data_total_gb']} GB",
-                        f"Bill: Rs. {rep['current_balance_rs']:,.2f}"
-                    ]
+                    if asks_quota_only:
+                        if "quota_available" not in active_memory["facts"] and rep["data_remaining_gb"] > 0:
+                            active_memory["facts"].append("quota_available")
+                        headline = "Data Quota Status"
+                        troubleshoot_note = (
+                            "\n\nSince your data quota is **not exceeded**, your slow speed is not caused by data throttling. "
+                            "Try restarting your router, checking Ethernet/Wi-Fi interference, or logging a fault ticket in **My Account & Fault Tickets**."
+                            if active_memory.get("active_topic") == "router_troubleshooting"
+                            else ""
+                        )
+                        answer_md = (
+                            f"### Your Current Data Quota (`{rep['account_id']}`)\n\n"
+                            f"- **Subscribed Package:** {rep['subscribed_package']}\n"
+                            f"- **Data Remaining:** **{rep['data_remaining_gb']} GB** out of {rep['data_total_gb']} GB\n"
+                            f"- **Connection Status:** `{rep['connection_status']}`"
+                            f"{troubleshoot_note}"
+                        )
+                    else:
+                        headline = f"Account Overview ({rep['account_id']})"
+                        answer_md = (
+                            f"### Account Profile & Connection Overview\n\n"
+                            f"- **Account Number:** `{rep['account_id']}`\n"
+                            f"- **Customer Name:** {rep['customer_name']}\n"
+                            f"- **Connection Status:** `{rep['connection_status']}`\n"
+                            f"- **Subscribed Package:** {rep['subscribed_package']}\n"
+                            f"- **Data Balance:** {rep['data_remaining_gb']} GB remaining of {rep['data_total_gb']} GB\n"
+                            f"- **Current Bill:** Rs. {rep['current_balance_rs']:,.2f} (Due: {rep['bill_due_date']})\n"
+                            f"- **Optical Rx Power:** {rep['optical_rx_power_dbm']} dBm\n"
+                            f"- **Open Support Tickets:** {rep['open_tickets_count']}"
+                        )
+                    key_points = []
                     has_knowledge = True
                     severity = "KB_HIGH"
                     confidence = "HIGH"
                     esc_req = False
                     esc_target = "MySLT Self-Care"
-                    citations = ["SLTMobitel Customer Data Gateway (Awaiting Live CRM Key)"]
+                    citations = ["SLTMobitel Customer Data Gateway"]
                     chunks = [{
                         "text": answer_md,
                         "title": "SLT Customer Account Profile",
