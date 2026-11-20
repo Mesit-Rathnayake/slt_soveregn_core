@@ -327,7 +327,7 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
                   <option value="Fibre">SLT Fibre Broadband (FTTH)</option>
                   <option value="4G LTE">Home Broadband (4G LTE)</option>
                   <option value="PEOTV">PEOTV</option>
-                  <option value="Mobile">SLTMobitel Mobile</option>
+                  <option value="Mobile">SLT Mobitel</option>
                   <option value="Copper Voice">Copper Voice / Megaline</option>
                 </select>
               </div>

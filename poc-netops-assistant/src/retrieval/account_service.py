@@ -230,10 +230,10 @@ class SLTCustomerAccountGateway:
             return {
                 **base_common,
                 "telephone_number": "071 234 5678",
-                "service_segment": "Mobile",
+                "service_segment": "SLT Mobitel",
                 "connection_status": "ACTIVE (4G / VoLTE)",
-                "service_category": "SLTMobitel Mobile Postpaid",
-                "subscribed_package": "Mobitel Postpaid Max (50 GB Anytime + Unlimited Calls)",
+                "service_category": "SLT Mobitel Postpaid",
+                "subscribed_package": "SLT Mobitel Postpaid Max (50 GB Anytime + Unlimited Calls)",
                 "monthly_rental_rs": 1890.0,
                 "current_balance_rs": 1890.0,
                 "data_total_gb": 50.0,

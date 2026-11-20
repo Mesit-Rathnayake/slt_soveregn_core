@@ -96,7 +96,9 @@ export default function App() {
         <div className="topbar-right">
           <span className="role-badge">
             <RoleIcon size={14} />{' '}
-            {userRole === 'Existing Customer' ? `${serviceSegment} Customer` : userRole}
+            {userRole === 'Existing Customer'
+              ? `${serviceSegment === 'Mobile' ? 'SLT Mobitel' : serviceSegment} Customer`
+              : userRole}
           </span>
           <button className="switch-role-btn" onClick={() => setUserRole(null)}>
             <LogOut size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />

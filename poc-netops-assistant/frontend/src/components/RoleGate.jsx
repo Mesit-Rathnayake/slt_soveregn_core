@@ -5,7 +5,7 @@ const SERVICE_SEGMENTS = [
   { id: 'Fibre', label: 'Fibre (FTTH)' },
   { id: 'Broadband', label: 'Broadband (4G LTE)' },
   { id: 'PEOTV', label: 'PEOTV' },
-  { id: 'Mobile', label: 'Mobitel Mobile' },
+  { id: 'Mobile', label: 'SLT Mobitel' },
 ];
 
 export default function RoleGate({ onSelectRole }) {
@@ -79,7 +79,7 @@ export default function RoleGate({ onSelectRole }) {
               onSelectRole('Existing Customer', accountNumber || 'SLT-ACC-0112456789', serviceSegment)
             }
           >
-            Continue as {serviceSegment} Customer <ArrowRight size={16} />
+            Continue as {serviceSegment === 'Mobile' ? 'SLT Mobitel' : serviceSegment} Customer <ArrowRight size={16} />
           </button>
         </div>
 
