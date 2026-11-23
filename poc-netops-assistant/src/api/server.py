@@ -82,6 +82,16 @@ class OfficerTicketUpdateRequest(BaseModel):
     user_role: str = Field(default="Technical Officer")
 
 
+class OTPRequestModel(BaseModel):
+    connection_number: str = Field(..., min_length=9, max_length=15)
+    channel: str = Field(default="SMS")
+
+
+class OTPVerifyModel(BaseModel):
+    connection_number: str = Field(..., min_length=9, max_length=15)
+    otp_code: str = Field(..., min_length=4, max_length=8)
+
+
 @app.get("/api/health")
 def health_check():
     tools = [t["name"] for t in agent.mcp_server.list_tools()]
@@ -100,6 +110,28 @@ def list_roles():
     return {
         "roles": SovereignGovernanceManager.ROLES
     }
+
+
+@app.post("/api/auth/request-otp")
+def auth_request_otp(req: OTPRequestModel):
+    try:
+        return agent.mcp_server.account_gateway.request_otp(
+            connection_number=req.connection_number,
+            channel=req.channel,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/auth/verify-otp")
+def auth_verify_otp(req: OTPVerifyModel):
+    res = agent.mcp_server.account_gateway.verify_otp(
+        connection_number=req.connection_number,
+        otp_code=req.otp_code,
+    )
+    if not res.get("verified"):
+        raise HTTPException(status_code=401, detail=res.get("error", "OTP verification failed."))
+    return res
 
 
 @app.post("/api/chat")
@@ -140,7 +172,7 @@ def chat(req: ChatRequest):
 @app.get("/api/account/{account_id}")
 def get_account(
     account_id: str,
-    service_segment: str = "Fibre",
+    service_segment: str | None = None,
     x_user_role: str = Header(default="Existing Customer"),
 ):
     if not governance.check_permission(x_user_role, "can_view_account_stats"):
@@ -196,15 +228,33 @@ def get_ticket(ticket_id: str, x_user_role: str = Header(default="Existing Custo
     return agent.mcp_server.account_gateway.get_ticket_status(ticket_id)
 
 
+@app.get("/api/officer/workloads")
+def officer_workloads(x_user_role: str = Header(default="Technical Officer")):
+    if not governance.check_permission(x_user_role, "can_manage_fault_tickets"):
+        raise HTTPException(
+            status_code=403,
+            detail="Officer workload metrics are restricted to Technical Officers and NOC Engineers."
+        )
+    return agent.mcp_server.account_gateway.get_officer_workloads()
+
+
 @app.get("/api/officer/tickets")
-def officer_list_tickets(status: str | None = None, x_user_role: str = Header(default="Technical Officer")):
+def officer_list_tickets(
+    status: str | None = None,
+    officer: str | None = None,
+    x_user_role: str = Header(default="Technical Officer"),
+):
     if not governance.check_permission(x_user_role, "can_manage_fault_tickets"):
         raise HTTPException(
             status_code=403,
             detail="Fault ticket queue management is restricted to Technical Officers and NOC Engineers."
         )
-    tickets = agent.mcp_server.account_gateway.list_all_tickets(status_filter=status)
-    return {"count": len(tickets), "tickets": tickets}
+    tickets = agent.mcp_server.account_gateway.list_all_tickets(
+        status_filter=status,
+        officer_filter=officer,
+    )
+    workloads = agent.mcp_server.account_gateway.get_officer_workloads()
+    return {"count": len(tickets), "tickets": tickets, "workloads": workloads}
 
 
 @app.patch("/api/officer/tickets/{ticket_id}")
@@ -214,14 +264,17 @@ def officer_update_ticket(ticket_id: str, req: OfficerTicketUpdateRequest):
             status_code=403,
             detail="Only Technical Officers and NOC Engineers can update fault tickets or log customer contacts."
         )
-    updated = agent.mcp_server.account_gateway.update_ticket(
-        ticket_id=ticket_id,
-        status=req.status,
-        officer_name=req.officer_name,
-        contact_channel=req.contact_channel,
-        customer_message=req.customer_message,
-        internal_note=req.internal_note,
-    )
+    try:
+        updated = agent.mcp_server.account_gateway.update_ticket(
+            ticket_id=ticket_id,
+            status=req.status,
+            officer_name=req.officer_name,
+            contact_channel=req.contact_channel,
+            customer_message=req.customer_message,
+            internal_note=req.internal_note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     if not updated:
         raise HTTPException(status_code=404, detail=f"Fault ticket '{ticket_id}' not found.")
     governance.log_event(
@@ -234,7 +287,7 @@ def officer_update_ticket(ticket_id: str, req: OfficerTicketUpdateRequest):
         latency_ms=1.0,
         engine_mode="OFFICER_TICKET_CONSOLE",
     )
-    return {"updated": True, "ticket": updated}
+    return {"updated": True, "ticket": updated, "workloads": agent.mcp_server.account_gateway.get_officer_workloads()}
 
 
 @app.post("/api/voice/tts")

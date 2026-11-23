@@ -33,7 +33,13 @@ export default function App() {
     if (role === 'Existing Customer' && idVal) setAccountNumber(idVal);
     if (staffName) setOfficerName(staffName);
     setServiceSegment(segment || 'Fibre');
-    setActiveTab(role === 'Technical Officer' ? 'officer' : 'chat');
+    if (role === 'Technical Officer') {
+      setActiveTab('officer');
+    } else if (role === 'Existing Customer') {
+      setActiveTab('account');
+    } else {
+      setActiveTab('chat');
+    }
     setMessages([]);
     setSessionMemory({});
   };

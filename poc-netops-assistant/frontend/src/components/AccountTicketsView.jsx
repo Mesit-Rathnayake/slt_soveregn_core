@@ -54,6 +54,7 @@ const SEGMENT_TO_SERVICE = {
   Broadband: '4G LTE',
   PEOTV: 'PEOTV',
   Mobile: 'Mobile',
+  'SLT Mobitel': 'Mobile',
 };
 
 const LED_OPTIONS = [
@@ -104,7 +105,7 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
     setError('');
     try {
       const resp = await fetch(
-        `/api/account/${encodeURIComponent(accountNumber || '0112456789')}?service_segment=${encodeURIComponent(serviceSegment)}`,
+        `/api/account/${encodeURIComponent(accountNumber || '0112456789')}`,
         { headers: { 'X-User-Role': userRole } }
       );
       if (!resp.ok) {
@@ -113,6 +114,12 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
       }
       const data = await resp.json();
       setProfile(data);
+      if (data.customer_name) setContactName(data.customer_name);
+      if (data.telephone_number) setContactNum(data.telephone_number);
+      if (data.service_address) setServiceAddress(data.service_address);
+      const mapped = SEGMENT_TO_SERVICE[data.service_segment] || 'Fibre';
+      setServiceType(mapped);
+      setFaultCategory((FAULT_CATEGORIES[mapped] || FAULT_CATEGORIES.Fibre)[0]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -271,12 +278,148 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
           </div>
 
           <div className="stat-card">
-            <div className="stat-label">Current Bill</div>
+            <div className="stat-label">Current Bill &amp; Credit</div>
             <div className="stat-value">
               Rs. {Number(profile.current_balance_rs).toLocaleString()}
             </div>
-            <div className="stat-sub">Due Date: {profile.bill_due_date}</div>
+            <div className="stat-sub">
+              Due: {profile.bill_due_date} · Credit Limit:{' '}
+              <strong>Rs. {Number(profile.credit_limit_rs || 15000).toLocaleString()}</strong>
+            </div>
+            <div className="stat-sub" style={{ color: '#00a859', fontWeight: 600 }}>
+              Available Credit: Rs. {Number(profile.available_credit_rs || 0).toLocaleString()}
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Current & Previous Tickets Summary */}
+      {profile && (
+        <div className="panel-card">
+          <h3>
+            <Activity size={18} /> Your Support Tickets (Current &amp; Previous)
+          </h3>
+
+          <div style={{ marginBottom: '1.15rem' }}>
+            <h4 style={{ fontSize: '0.84rem', color: '#0056a4', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+              Current Active Tickets ({profile.current_tickets?.length || 0})
+            </h4>
+            {profile.current_tickets?.length > 0 ? (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Ticket ID</th>
+                    <th>Fault &amp; Service</th>
+                    <th>Status</th>
+                    <th>Assigned Officer</th>
+                    <th>Priority / SLA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profile.current_tickets.map((t) => (
+                    <tr
+                      key={t.ticket_id}
+                      onClick={() => setSelectedTicket(selectedTicket?.ticket_id === t.ticket_id ? null : t)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td><code>{t.ticket_id}</code></td>
+                      <td>
+                        <strong>{t.fault_category || 'General'}</strong>
+                        <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{t.service_type}</div>
+                      </td>
+                      <td><strong>{t.status}</strong></td>
+                      <td>{t.assigned_officer || 'Pending'}</td>
+                      <td>{t.priority}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p style={{ fontSize: '0.86rem', color: '#64748b' }}>
+                You have no active fault tickets at the moment.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <h4 style={{ fontSize: '0.84rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+              Previous Resolved Tickets ({profile.previous_tickets?.length || 0})
+            </h4>
+            {profile.previous_tickets?.length > 0 ? (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Ticket ID</th>
+                    <th>Fault &amp; Service</th>
+                    <th>Status</th>
+                    <th>Handled By</th>
+                    <th>Summary</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profile.previous_tickets.map((t) => (
+                    <tr
+                      key={t.ticket_id}
+                      onClick={() => setSelectedTicket(selectedTicket?.ticket_id === t.ticket_id ? null : t)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td><code>{t.ticket_id}</code></td>
+                      <td>{t.fault_category || 'General'} · {t.service_type}</td>
+                      <td><strong style={{ color: '#00a859' }}>{t.status}</strong></td>
+                      <td>{t.assigned_officer || 'SLT Ops'}</td>
+                      <td>{t.issue_description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p style={{ fontSize: '0.86rem', color: '#64748b' }}>
+                No previous resolved tickets found for this connection.
+              </p>
+            )}
+          </div>
+
+          {selectedTicket && (
+            <div className="review-box" style={{ marginTop: '0.9rem' }}>
+              <div className="review-header">
+                <strong>Ticket Details: {selectedTicket.ticket_id}</strong>
+                <span className="priority-pill normal">{selectedTicket.status}</span>
+              </div>
+              <div className="review-grid">
+                <div>
+                  <span className="review-label">Assigned Officer &amp; Division</span>
+                  <div className="review-val">
+                    <strong>{selectedTicket.assigned_officer || 'Queued'}</strong> · {selectedTicket.assigned_team}
+                  </div>
+                </div>
+                <div>
+                  <span className="review-label">SLA &amp; Visit Window</span>
+                  <div className="review-val">
+                    {selectedTicket.target_sla || 'Within 8 Hours'} · {selectedTicket.preferred_visit_slot || 'Anytime'}
+                  </div>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span className="review-label">Description</span>
+                  <div className="review-val">{selectedTicket.issue_description}</div>
+                </div>
+                {selectedTicket.officer_updates?.length > 0 && (
+                  <div style={{ gridColumn: '1 / -1', marginTop: '0.4rem' }}>
+                    <span className="review-label">Updates from Technical Officer</span>
+                    <div className="timeline" style={{ marginTop: 6 }}>
+                      {selectedTicket.officer_updates.map((upd, idx) => (
+                        <div key={idx} className="timeline-item">
+                          <div className="timeline-meta">
+                            <strong>{upd.officer_name}</strong> · {upd.channel} · <code>{upd.status_change}</code>
+                          </div>
+                          {upd.message && <div className="timeline-msg">{upd.message}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

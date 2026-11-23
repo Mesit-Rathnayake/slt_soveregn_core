@@ -1311,6 +1311,75 @@ def test_technical_officer_role_ticket_review_and_contact():
         assert exc_upd.value.status_code == 403
 
 
+def test_otp_auth_and_auto_service_detection():
+    """Verifies Connection Number + OTP authentication and automatic connection-type detection."""
+    import pytest
+    from fastapi import HTTPException
+    from api.server import auth_request_otp, auth_verify_otp, OTPRequestModel, OTPVerifyModel
+
+    # 1. Request OTP via Email for PEOTV line 0812233445
+    req_res = auth_request_otp(OTPRequestModel(connection_number="0812233445", channel="EMAIL"))
+    assert req_res["sent"] is True
+    assert req_res["channel"] == "EMAIL"
+    assert req_res["detected_service_segment"] == "PEOTV"
+    assert "@" in req_res["masked_destination"]
+    otp_code = req_res["demo_otp_code"]
+    assert otp_code and len(otp_code) == 6
+
+    # 2. Invalid OTP returns HTTP 401
+    with pytest.raises(HTTPException) as exc_bad:
+        auth_verify_otp(OTPVerifyModel(connection_number="0812233445", otp_code="000000"))
+    assert exc_bad.value.status_code == 401
+
+    # 3. Valid OTP verifies and returns full profile with credit & current/previous tickets
+    ver_res = auth_verify_otp(OTPVerifyModel(connection_number="0812233445", otp_code=otp_code))
+    assert ver_res["verified"] is True
+    assert ver_res["service_segment"] == "PEOTV"
+    prof = ver_res["profile"]
+    assert prof["credit_limit_rs"] > 0
+    assert prof["available_credit_rs"] >= 0
+    assert isinstance(prof["current_tickets"], list)
+    assert isinstance(prof["previous_tickets"], list)
+
+
+def test_round_robin_officer_assignment_and_max_cap():
+    """Verifies least-loaded round-robin officer assignment, max In-Progress cap, and auto-promotion."""
+    from retrieval.account_service import SLTCustomerAccountGateway
+
+    gw = SLTCustomerAccountGateway()
+    # Initially: Nimal=1, Chamara=1, Kavindu=0, Sashini=0 (max=2 per officer -> 6 free slots left)
+    w0 = gw.get_officer_workloads()
+    assert w0["max_in_progress_per_officer"] == 2
+
+    # Next 2 tickets must go to the 0-load officers (Kavindu and Sashini)
+    t1 = gw.create_fault_ticket("0112456789", "Fibre", "LOS red light #1")
+    t2 = gw.create_fault_ticket("0112456789", "Fibre", "LOS red light #2")
+    assert {t1["assigned_officer"], t2["assigned_officer"]} == {
+        "Eng. Kavindu Perera",
+        "Tech. Sashini Wickramasinghe",
+    }
+
+    # Fill remaining 4 slots so all 4 officers reach 2/2 max capacity
+    for i in range(4):
+        tx = gw.create_fault_ticket("0112456789", "Fibre", f"Fill slot #{i}")
+        assert tx["status"] == "IN_PROGRESS"
+
+    w_full = gw.get_officer_workloads()
+    assert all(o["at_capacity"] for o in w_full["officers"])
+
+    # Next ticket MUST be QUEUED because all officers are at max In-Progress capacity
+    t_queued = gw.create_fault_ticket("0112456789", "Fibre", "Overflow ticket while all officers busy")
+    assert t_queued["status"] == "QUEUED"
+    assert "Queued" in t_queued["assigned_officer"]
+
+    # Resolving one ticket for Kavindu must auto-promote the QUEUED ticket to Kavindu
+    gw.update_ticket(t1["ticket_id"], status="RESOLVED", officer_name=t1["assigned_officer"])
+    promoted = gw.get_ticket_status(t_queued["ticket_id"])["ticket"]
+    assert promoted["status"] == "IN_PROGRESS"
+    assert promoted["assigned_officer"] == t1["assigned_officer"]
+
+
+
 
 
 

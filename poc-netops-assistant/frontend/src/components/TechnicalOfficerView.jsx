@@ -10,9 +10,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   MessageCircle,
+  Users,
 } from 'lucide-react';
 
-const STATUS_OPTIONS = ['LOGGED', 'IN_PROGRESS', 'CONTACTED_CUSTOMER', 'RESOLVED'];
+const STATUS_OPTIONS = ['IN_PROGRESS', 'CONTACTED_CUSTOMER', 'QUEUED', 'RESOLVED'];
 
 const QUICK_MESSAGES = [
   'We received your fault ticket and confirmed your visit window. Our field technician will call 30 minutes prior to arrival.',
@@ -22,7 +23,9 @@ const QUICK_MESSAGES = [
 
 export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'Eng. Nimal Silva' }) {
   const [tickets, setTickets] = useState([]);
+  const [workloads, setWorkloads] = useState(null);
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [officerFilter, setOfficerFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState(null);
@@ -36,11 +39,15 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
   const [saving, setSaving] = useState(false);
   const [saveBanner, setSaveBanner] = useState('');
 
-  const loadTickets = async (filterVal = statusFilter) => {
+  const loadTickets = async (filterVal = statusFilter, offVal = officerFilter) => {
     setLoading(true);
     setError('');
     try {
-      const qs = filterVal && filterVal !== 'ALL' ? `?status=${encodeURIComponent(filterVal)}` : '';
+      const params = new URLSearchParams();
+      if (filterVal && filterVal !== 'ALL') params.set('status', filterVal);
+      if (offVal && offVal !== 'ALL') params.set('officer', offVal);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+
       const resp = await fetch(`/api/officer/tickets${qs}`, {
         headers: { 'X-User-Role': userRole },
       });
@@ -50,7 +57,8 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
       }
       const data = await resp.json();
       setTickets(data.tickets || []);
-      if (data.tickets?.length > 0 && !selectedId) {
+      if (data.workloads) setWorkloads(data.workloads);
+      if (data.tickets?.length > 0 && !data.tickets.some((t) => t.ticket_id === selectedId)) {
         setSelectedId(data.tickets[0].ticket_id);
       }
     } catch (err) {
@@ -61,14 +69,23 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
   };
 
   useEffect(() => {
-    loadTickets(statusFilter);
-  }, [statusFilter, userRole]);
+    loadTickets(statusFilter, officerFilter);
+  }, [statusFilter, officerFilter, userRole]);
 
   const selectedTicket = tickets.find((t) => t.ticket_id === selectedId) || tickets[0] || null;
 
   useEffect(() => {
     if (selectedTicket) {
-      setNewStatus(selectedTicket.status === 'LOGGED' ? 'CONTACTED_CUSTOMER' : selectedTicket.status);
+      setNewStatus(selectedTicket.status === 'QUEUED' ? 'IN_PROGRESS' : selectedTicket.status);
+      if (
+        selectedTicket.assigned_officer &&
+        !selectedTicket.assigned_officer.toLowerCase().includes('queued') &&
+        selectedTicket.assigned_officer !== 'Unassigned'
+      ) {
+        setOfficerName(selectedTicket.assigned_officer);
+      } else {
+        setOfficerName(defaultOfficerName);
+      }
     }
   }, [selectedTicket?.ticket_id]);
 
@@ -84,7 +101,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: newStatus,
-          officer_name: officerName.trim() || 'Technical Officer',
+          officer_name: officerName.trim() || defaultOfficerName,
           contact_channel: channel,
           customer_message: customerMessage.trim(),
           internal_note: internalNote.trim(),
@@ -98,7 +115,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
       setSaveBanner(`Ticket ${selectedTicket.ticket_id} updated (${newStatus}) and customer contact logged.`);
       setCustomerMessage('');
       setInternalNote('');
-      await loadTickets(statusFilter);
+      await loadTickets(statusFilter, officerFilter);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -108,7 +125,8 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
 
   const openCount = tickets.filter((t) => t.status !== 'RESOLVED').length;
   const criticalCount = tickets.filter((t) => (t.priority || '').includes('CRITICAL') && t.status !== 'RESOLVED').length;
-  const resolvedCount = tickets.filter((t) => t.status === 'RESOLVED').length;
+  const queuedCount = workloads?.queued_tickets_count ?? tickets.filter((t) => t.status === 'QUEUED').length;
+  const officerRoster = workloads?.officers || [];
 
   return (
     <div>
@@ -121,14 +139,9 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
       {/* Officer Queue KPIs */}
       <div className="dashboard-grid">
         <div className="stat-card">
-          <div className="stat-label">Total Tickets</div>
-          <div className="stat-value">{tickets.length}</div>
-          <div className="stat-sub">Filtered Queue View</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Open / Active</div>
+          <div className="stat-label">Active Tickets</div>
           <div className="stat-value" style={{ color: '#0056a4' }}>{openCount}</div>
-          <div className="stat-sub">Awaiting field or remote resolution</div>
+          <div className="stat-sub">Total Shown: {tickets.length}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Critical / High Priority</div>
@@ -136,11 +149,63 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
           <div className="stat-sub">4-Hour SLA Target</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Resolved</div>
-          <div className="stat-value" style={{ color: '#00a859' }}>{resolvedCount}</div>
-          <div className="stat-sub">Closed &amp; Verified</div>
+          <div className="stat-label">Queued (Waiting Capacity)</div>
+          <div className="stat-value" style={{ color: queuedCount > 0 ? '#d97706' : '#00a859' }}>
+            {queuedCount}
+          </div>
+          <div className="stat-sub">Auto-assigned when officer frees up</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Max In-Progress Limit</div>
+          <div className="stat-value">{workloads?.max_in_progress_per_officer ?? 2} / Officer</div>
+          <div className="stat-sub">Least-Loaded Round-Robin</div>
         </div>
       </div>
+
+      {/* Technical Officer Workload & Capacity Monitor */}
+      {officerRoster.length > 0 && (
+        <div className="panel-card">
+          <h3>
+            <Users size={18} /> Technical Officer Workload &amp; Round-Robin Capacity
+          </h3>
+          <div className="dashboard-grid" style={{ marginBottom: 0 }}>
+            {officerRoster.map((o) => {
+              const pct = Math.min(100, Math.round((o.in_progress_count / o.max_in_progress) * 100));
+              return (
+                <div
+                  key={o.officer_id}
+                  className="stat-card"
+                  style={{
+                    boxShadow: 'none',
+                    borderColor: o.at_capacity ? '#fca5a5' : '#e2e8f0',
+                    background: o.at_capacity ? '#fef2f2' : '#f8fafc',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                    <strong style={{ fontSize: '0.88rem' }}>{o.name}</strong>
+                    <span className={`priority-pill ${o.at_capacity ? 'high' : 'normal'}`}>
+                      {o.in_progress_count} / {o.max_in_progress}
+                    </span>
+                  </div>
+                  <div className="stat-sub">{o.division}</div>
+                  <div className="progress-track">
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${pct}%`,
+                        background: o.at_capacity ? '#dc2626' : undefined,
+                      }}
+                    />
+                  </div>
+                  <div className="stat-sub" style={{ marginTop: 6 }}>
+                    {o.at_capacity ? 'At Max Capacity' : 'Available for Next Assignment'} · Resolved: {o.resolved_count}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Filter & Queue Table */}
       <div className="panel-card">
@@ -149,6 +214,28 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
             <ClipboardList size={18} /> Customer Fault Ticket Queue
           </h3>
           <div className="filter-pills">
+            <select
+              value={officerFilter}
+              onChange={(e) => setOfficerFilter(e.target.value)}
+              style={{
+                padding: '5px 10px',
+                borderRadius: 999,
+                border: '1px solid #cbd5e1',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+              }}
+            >
+              <option value="ALL">All Officers</option>
+              <option value={defaultOfficerName}>My Assigned ({defaultOfficerName})</option>
+              {officerRoster
+                .filter((o) => o.name !== defaultOfficerName)
+                .map((o) => (
+                  <option key={o.officer_id} value={o.name}>
+                    {o.name}
+                  </option>
+                ))}
+            </select>
+
             {['ALL', ...STATUS_OPTIONS].map((st) => (
               <button
                 key={st}
@@ -158,7 +245,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
                 {st.replace('_', ' ')}
               </button>
             ))}
-            <button className="btn btn-ghost" onClick={() => loadTickets(statusFilter)} title="Refresh Queue">
+            <button className="btn btn-ghost" onClick={() => loadTickets(statusFilter, officerFilter)} title="Refresh Queue">
               <RefreshCw size={14} />
             </button>
           </div>
@@ -291,12 +378,17 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
             <div className="form-grid">
               <div className="field">
                 <label>Assigned Technical Officer</label>
-                <input
-                  type="text"
-                  value={officerName}
-                  onChange={(e) => setOfficerName(e.target.value)}
-                  required
-                />
+                <select value={officerName} onChange={(e) => setOfficerName(e.target.value)}>
+                  {officerRoster.length > 0 ? (
+                    officerRoster.map((o) => (
+                      <option key={o.officer_id} value={o.name}>
+                        {o.name} ({o.in_progress_count}/{o.max_in_progress})
+                      </option>
+                    ))
+                  ) : (
+                    <option value={defaultOfficerName}>{defaultOfficerName}</option>
+                  )}
+                </select>
               </div>
               <div className="field">
                 <label>Ticket Status</label>
@@ -337,7 +429,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
                 rows={3}
                 value={customerMessage}
                 onChange={(e) => setCustomerMessage(e.target.value)}
-                placeholder="e.g., Called customer on 077 891 2345. Confirmed Fibre LOS red light; field team dispatched for Morning 08:00-12:00 window."
+                placeholder="e.g., Called customer. Confirmed Fibre LOS red light; field team dispatched for Morning 08:00-12:00 window."
               />
             </div>
 
