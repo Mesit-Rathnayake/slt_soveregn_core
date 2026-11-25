@@ -62,18 +62,29 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <div className="slt-utility-bar">
+        <div className="slt-utility-links">
+          <span>Personal</span>
+          <span>Business</span>
+          <span>MySLT Portal</span>
+        </div>
+        <span>Hotline: 1212 (Fibre / Broadband / PEOTV) · 1717 (SLT Mobitel)</span>
+      </div>
+
       <header className="topbar">
         <div className="topbar-left">
-          <Shield size={24} />
-          <div>
-            <div className="topbar-title">SLTMobitel Support Portal</div>
-            <div className="topbar-sub">
-              {userRole === 'New Customer'
-                ? 'Plans, Packages & General Inquiries'
-                : userRole === 'Technical Officer'
-                ? 'Fault Ticket Review & Customer Dispatch Console'
-                : 'Subscriber Self-Care, Fault Ticketing & Support'}
-            </div>
+          <div className="slt-wordmark">
+            <span className="slt-logo-icon">SLT</span>
+            <span>
+              SLT<span className="mobitel-text">MOBITEL</span>
+            </span>
+          </div>
+          <div className="topbar-sub" style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: 10 }}>
+            {userRole === 'New Customer'
+              ? 'Plans & Packages'
+              : userRole === 'Technical Officer'
+              ? 'Technical Officer Console'
+              : 'MySLT Care'}
           </div>
         </div>
 
@@ -144,6 +155,10 @@ export default function App() {
           />
         )}
       </main>
+
+      <footer className="slt-footer">
+        © SLTMobitel · Sri Lanka Telecom PLC · 24/7 Support: 1212 / 1717
+      </footer>
     </div>
   );
 }

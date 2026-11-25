@@ -96,19 +96,38 @@ export default function RoleGate({ onSelectRole }) {
   };
 
   return (
-    <div className="gate-container">
-      <div className="gate-header">
-        <div className="slt-wordmark" style={{ fontSize: '1.15rem', color: '#003e78' }}>
-          <span className="slt-mark-badge">SLT</span>
-          <span>SLTMobitel Support</span>
+    <div className="gate-page">
+      <div className="slt-utility-bar">
+        <div className="slt-utility-links">
+          <span>Personal</span>
+          <span>Business</span>
+          <span>MySLT Self-Care</span>
         </div>
-        <h1>How can we help you today?</h1>
-        <p>
-          Sign in with your connection number to manage your account and tickets, or continue as a
-          new visitor to explore packages.
-        </p>
+        <span>24/7 Support Hotline: 1212 · Mobile: 1717</span>
       </div>
 
+      <header className="gate-nav">
+        <div className="slt-wordmark">
+          <span className="slt-logo-icon">SLT</span>
+          <span>
+            SLT<span className="mobitel-text">MOBITEL</span>
+          </span>
+        </div>
+        <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 500 }}>
+          Digital Support &amp; Self-Care Portal
+        </span>
+      </header>
+
+      <section className="gate-hero">
+        <div className="gate-hero-tag">SLTMobitel · The Connection</div>
+        <h1>How can we help you today?</h1>
+        <p>
+          Verify your registered connection number with OTP to access your account, billing, and
+          fault tickets, or continue as a new customer to explore plans.
+        </p>
+      </section>
+
+      <div className="gate-body">
       <div className="gate-cards">
         {/* Existing Customer Card */}
         <div className="role-card subscriber">
@@ -292,6 +311,11 @@ export default function RoleGate({ onSelectRole }) {
           </button>
         </div>
       </div>
+      </div>
+
+      <footer className="slt-footer">
+        © SLTMobitel · Sri Lanka Telecom PLC · Fixed / Fibre / PEOTV: 1212 · Mobile: 1717
+      </footer>
     </div>
   );
 }
