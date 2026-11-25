@@ -119,12 +119,21 @@ export default function RoleGate({ onSelectRole }) {
       </header>
 
       <section className="gate-hero">
-        <div className="gate-hero-tag">SLTMobitel · The Connection</div>
-        <h1>How can we help you today?</h1>
-        <p>
-          Verify your registered connection number with OTP to access your account, billing, and
-          fault tickets, or continue as a new customer to explore plans.
-        </p>
+        <div className="hero-shapes" aria-hidden="true">
+          <span className="shape shape-1" />
+          <span className="shape shape-2" />
+          <span className="shape shape-3" />
+          <span className="shape shape-4" />
+          <span className="shape shape-5" />
+        </div>
+        <div className="gate-hero-content">
+          <div className="gate-hero-tag">SLTMobitel · The Connection</div>
+          <h1>How can we help you today?</h1>
+          <p>
+            Verify your registered connection number with OTP to access your account, billing, and
+            fault tickets, or continue as a new customer to explore plans.
+          </p>
+        </div>
       </section>
 
       <div className="gate-body">
