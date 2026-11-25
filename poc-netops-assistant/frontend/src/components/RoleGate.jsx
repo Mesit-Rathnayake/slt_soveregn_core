@@ -97,6 +97,16 @@ export default function RoleGate({ onSelectRole }) {
 
   return (
     <div className="gate-page">
+      <div className="page-shapes" aria-hidden="true">
+        <span className="shape shape-1" />
+        <span className="shape shape-2" />
+        <span className="shape shape-3" />
+        <span className="shape shape-4" />
+        <span className="shape shape-5" />
+        <span className="shape shape-6" />
+        <span className="shape shape-7" />
+      </div>
+
       <div className="slt-utility-bar">
         <div className="slt-utility-links">
           <span>Personal</span>
@@ -119,13 +129,6 @@ export default function RoleGate({ onSelectRole }) {
       </header>
 
       <section className="gate-hero">
-        <div className="hero-shapes" aria-hidden="true">
-          <span className="shape shape-1" />
-          <span className="shape shape-2" />
-          <span className="shape shape-3" />
-          <span className="shape shape-4" />
-          <span className="shape shape-5" />
-        </div>
         <div className="gate-hero-content">
           <div className="gate-hero-tag">SLTMobitel · The Connection</div>
           <h1>How can we help you today?</h1>
