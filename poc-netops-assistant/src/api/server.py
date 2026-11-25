@@ -183,6 +183,16 @@ class StaffLoginModel(BaseModel):
     access_pin: str = Field(default="")
 
 
+class OfficerOTPRequestModel(BaseModel):
+    staff_id: str = Field(..., min_length=3, max_length=60)
+    channel: str = Field(default="SMS")
+
+
+class OfficerOTPVerifyModel(BaseModel):
+    staff_id: str = Field(..., min_length=3, max_length=60)
+    otp_code: str = Field(..., min_length=4, max_length=8)
+
+
 @app.get("/api/health")
 def health_check():
     tools = [t["name"] for t in agent.mcp_server.list_tools()]
@@ -234,6 +244,40 @@ def auth_verify_otp(req: OTPVerifyModel, request: Request = None):
         subject=res["connection_number"],
         service_segment=res["service_segment"],
         display_name=res["profile"].get("customer_name", ""),
+    )
+    return {**res, "access_token": access_token, "token_type": "Bearer"}
+
+
+@app.post("/api/auth/officer/request-otp")
+def auth_officer_request_otp(req: OfficerOTPRequestModel, request: Request = None):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"officer_otp_ip:{ip}", max_requests=10, window_seconds=300)
+    _enforce_rate_limit(f"officer_otp_id:{req.staff_id.upper()}", max_requests=5, window_seconds=300)
+    try:
+        return agent.mcp_server.account_gateway.request_officer_otp(
+            staff_id=req.staff_id,
+            channel=req.channel,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/auth/officer/verify-otp")
+def auth_officer_verify_otp(req: OfficerOTPVerifyModel, request: Request = None):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"officer_ver_ip:{ip}", max_requests=15, window_seconds=300)
+    res = agent.mcp_server.account_gateway.verify_officer_otp(
+        staff_id=req.staff_id,
+        otp_code=req.otp_code,
+    )
+    if not res.get("verified"):
+        raise HTTPException(status_code=401, detail=res.get("error", "Officer OTP verification failed."))
+
+    access_token = token_manager.issue_token(
+        role="Technical Officer",
+        subject=res["staff_id"],
+        service_segment="All",
+        display_name=res["display_name"],
     )
     return {**res, "access_token": access_token, "token_type": "Bearer"}
 

@@ -1426,6 +1426,50 @@ def test_production_security_tokens_idor_and_rate_limiting():
     assert retry_after >= 1
 
 
+def test_technical_officer_otp_verification():
+    """Verifies Technical Officer Staff ID + OTP login and signed Bearer token issuance."""
+    import pytest
+    from fastapi import HTTPException
+    from api.server import (
+        auth_officer_request_otp,
+        auth_officer_verify_otp,
+        officer_list_tickets,
+        OfficerOTPRequestModel,
+        OfficerOTPVerifyModel,
+        rate_limiter,
+    )
+
+    rate_limiter.reset()
+
+    # 1. Unregistered Staff ID rejected with 400
+    with pytest.raises(HTTPException) as exc_bad_id:
+        auth_officer_request_otp(OfficerOTPRequestModel(staff_id="TO-999", channel="SMS"))
+    assert exc_bad_id.value.status_code == 400
+
+    # 2. Registered Staff ID (TO-101) sends OTP via Email
+    req_res = auth_officer_request_otp(OfficerOTPRequestModel(staff_id="TO-101", channel="EMAIL"))
+    assert req_res["sent"] is True
+    assert req_res["staff_id"] == "TO-101"
+    assert "@" in req_res["masked_destination"]
+    code = req_res["demo_otp_code"]
+    assert code and len(code) == 6
+
+    # 3. Wrong OTP rejected with 401
+    with pytest.raises(HTTPException) as exc_wrong:
+        auth_officer_verify_otp(OfficerOTPVerifyModel(staff_id="TO-101", otp_code="000000"))
+    assert exc_wrong.value.status_code == 401
+
+    # 4. Valid OTP issues signed Technical Officer Bearer token that accesses officer queue
+    ver = auth_officer_verify_otp(OfficerOTPVerifyModel(staff_id="TO-101", otp_code=code))
+    assert ver["verified"] is True
+    assert ver["display_name"] == "Eng. Nimal Silva"
+    assert ver["access_token"]
+
+    q = officer_list_tickets(authorization=f"Bearer {ver['access_token']}")
+    assert q["count"] >= 1
+
+
+
 
 
 

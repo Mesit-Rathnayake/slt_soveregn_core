@@ -20,10 +20,34 @@ class SLTCustomerAccountGateway:
     ACTIVE_WORKLOAD_STATUSES = {"IN_PROGRESS", "CONTACTED_CUSTOMER"}
 
     TECHNICAL_OFFICERS = [
-        {"officer_id": "TO-101", "name": "Eng. Nimal Silva", "division": "Fibre & GPON Operations"},
-        {"officer_id": "TO-102", "name": "Tech. Chamara Jayasinghe", "division": "PEOTV & Broadband Ops"},
-        {"officer_id": "TO-103", "name": "Eng. Kavindu Perera", "division": "Metro Access Maintenance"},
-        {"officer_id": "TO-104", "name": "Tech. Sashini Wickramasinghe", "division": "Customer Field Operations"},
+        {
+            "officer_id": "TO-101",
+            "name": "Eng. Nimal Silva",
+            "division": "Fibre & GPON Operations",
+            "mobile": "071 800 1001",
+            "email": "nimal.silva@slt.com.lk",
+        },
+        {
+            "officer_id": "TO-102",
+            "name": "Tech. Chamara Jayasinghe",
+            "division": "PEOTV & Broadband Ops",
+            "mobile": "071 800 1002",
+            "email": "chamara.j@slt.com.lk",
+        },
+        {
+            "officer_id": "TO-103",
+            "name": "Eng. Kavindu Perera",
+            "division": "Metro Access Maintenance",
+            "mobile": "071 800 1003",
+            "email": "kavindu.p@slt.com.lk",
+        },
+        {
+            "officer_id": "TO-104",
+            "name": "Tech. Sashini Wickramasinghe",
+            "division": "Customer Field Operations",
+            "mobile": "071 800 1004",
+            "email": "sashini.w@slt.com.lk",
+        },
     ]
 
     # Sample subscriber directory for stub mode (automatically maps connection number -> service type)
@@ -348,6 +372,80 @@ class SLTCustomerAccountGateway:
             "account_id": profile["account_id"],
             "service_segment": profile["service_segment"],
             "profile": profile,
+        }
+
+    def _find_officer(self, staff_id: str) -> dict | None:
+        clean = str(staff_id or "").strip().upper()
+        for o in self.TECHNICAL_OFFICERS:
+            if o["officer_id"].upper() == clean or o["email"].upper() == clean:
+                return dict(o)
+        return None
+
+    def request_officer_otp(self, staff_id: str, channel: str = "SMS") -> dict:
+        """Initiates OTP authentication for a registered Technical Officer Staff ID."""
+        officer = self._find_officer(staff_id)
+        if not officer:
+            raise ValueError(
+                "Unregistered Technical Officer Staff ID. Use a valid SLT Staff ID (e.g. TO-101, TO-102, TO-103, TO-104)."
+            )
+
+        ch = "EMAIL" if str(channel).strip().upper() == "EMAIL" else "SMS"
+        otp_code = f"{secrets.randbelow(900000) + 100000}"
+        expires_at = time.time() + 300
+        store_key = f"officer:{officer['officer_id'].upper()}"
+
+        with self._lock:
+            self._otp_store[store_key] = {
+                "otp": otp_code,
+                "channel": ch,
+                "expires_at": expires_at,
+                "attempts": 0,
+                "officer": officer,
+            }
+
+        target_raw = officer["email"] if ch == "EMAIL" else officer["mobile"]
+        masked_target = self._mask_contact(target_raw, ch)
+        return {
+            "sent": True,
+            "staff_id": officer["officer_id"],
+            "channel": ch,
+            "masked_destination": masked_target,
+            "expires_in_seconds": 300,
+            "demo_otp_code": None if self.is_live_crm_enabled else otp_code,
+            "message": f"A 6-digit officer verification OTP has been sent via {ch} to {masked_target}.",
+        }
+
+    def verify_officer_otp(self, staff_id: str, otp_code: str) -> dict:
+        """Verifies a Technical Officer's 6-digit OTP and returns their verified staff profile."""
+        officer = self._find_officer(staff_id)
+        if not officer:
+            return {"verified": False, "error": "Unregistered Staff ID."}
+
+        store_key = f"officer:{officer['officer_id'].upper()}"
+        with self._lock:
+            entry = self._otp_store.get(store_key)
+            if not entry:
+                return {"verified": False, "error": "No active OTP found for this Staff ID. Please request a new OTP."}
+            if time.time() > entry["expires_at"]:
+                self._otp_store.pop(store_key, None)
+                return {"verified": False, "error": "OTP has expired. Please request a new OTP."}
+
+            entry["attempts"] += 1
+            if entry["attempts"] > 5:
+                self._otp_store.pop(store_key, None)
+                return {"verified": False, "error": "Too many failed OTP attempts. Please request a new OTP."}
+
+            if not secrets.compare_digest(str(otp_code).strip(), entry["otp"]):
+                return {"verified": False, "error": "Invalid OTP code. Please check and try again."}
+
+            self._otp_store.pop(store_key, None)
+
+        return {
+            "verified": True,
+            "role": "Technical Officer",
+            "staff_id": officer["officer_id"],
+            "display_name": officer["name"],
+            "division": officer["division"],
         }
 
     def get_account_profile(self, identifier: str = "0112456789", service_segment: str | None = None) -> dict:
