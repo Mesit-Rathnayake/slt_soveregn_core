@@ -224,6 +224,118 @@ Resources:
       ApiId: !Ref SLTKnowledgeHttpApi
       StageName: !Ref EnvironmentName
       AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 500
+        ThrottlingRateLimit: 1000
+
+  # 5C. High-Scale DynamoDB Tables (On-Demand Pay-Per-Request + KMS Encrypted + TTL)
+  SLTFaultTicketsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "slt-fault-tickets-${EnvironmentName}"
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref SLTSovereignKMSKey
+      AttributeDefinitions:
+        - AttributeName: ticket_id
+          AttributeType: S
+        - AttributeName: account_id
+          AttributeType: S
+        - AttributeName: assigned_officer
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: ticket_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: AccountTicketsIndex
+          KeySchema:
+            - AttributeName: account_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: OfficerWorkloadIndex
+          KeySchema:
+            - AttributeName: assigned_officer
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  SLTOtpAndSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "slt-otp-sessions-${EnvironmentName}"
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref SLTSovereignKMSKey
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: session_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_key
+          KeyType: HASH
+
+  # 5D. AWS WAFv2 WebACL (DDoS / SMS-Pumping Rate Limit + OWASP Managed Rules)
+  SLTCloudFrontWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub "sltmobitel-ai-waf-${EnvironmentName}"
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub "SLTMobitelAIWAF-${EnvironmentName}"
+      Rules:
+        - Name: RateLimitPerIP
+          Priority: 1
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitPerIP
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesCommonRuleSet
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 3
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesKnownBadInputsRuleSet
 
   # 6. Amazon CloudFront Security Response Headers Policy (HSTS, XSS, No-Sniff, Frame-Options)
   SLTCloudFrontSecurityHeadersPolicy:
@@ -254,7 +366,8 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: SLTMobitel AI Agent CloudFront Edge Gateway (Injects x-auth-secret to API Gateway Origin)
+        WebACLId: !GetAtt SLTCloudFrontWebACL.Arn
+        Comment: SLTMobitel AI Agent CloudFront Edge Gateway (WAFv2 Protected + Injects x-auth-secret)
         HttpVersion: http2and3
         PriceClass: PriceClass_200 # Includes South Asia / Singapore / Chennai Edge POPs for Sri Lanka
         Origins:

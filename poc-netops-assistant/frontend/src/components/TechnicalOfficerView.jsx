@@ -21,7 +21,12 @@ const QUICK_MESSAGES = [
   'We have resolved the issue and verified stable signal levels. Please restart your router and confirm connectivity.',
 ];
 
-export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'Eng. Nimal Silva' }) {
+export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'Eng. Nimal Silva', authToken = '' }) {
+  const authHeaders = (extra = {}) => ({
+    ...extra,
+    'X-User-Role': userRole,
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  });
   const [tickets, setTickets] = useState([]);
   const [workloads, setWorkloads] = useState(null);
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -49,7 +54,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
       const qs = params.toString() ? `?${params.toString()}` : '';
 
       const resp = await fetch(`/api/officer/tickets${qs}`, {
-        headers: { 'X-User-Role': userRole },
+        headers: authHeaders(),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -98,7 +103,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
     try {
       const resp = await fetch(`/api/officer/tickets/${encodeURIComponent(selectedTicket.ticket_id)}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           status: newStatus,
           officer_name: officerName.trim() || defaultOfficerName,

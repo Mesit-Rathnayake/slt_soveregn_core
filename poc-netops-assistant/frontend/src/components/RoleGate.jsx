@@ -75,13 +75,36 @@ export default function RoleGate({ onSelectRole }) {
         'Existing Customer',
         data.connection_number,
         data.service_segment,
-        data.profile?.customer_name
+        data.profile?.customer_name,
+        data.access_token || ''
       );
     } catch (err) {
       setAuthError(err.message);
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleStaffLogin = async (role, staffId, displayName) => {
+    try {
+      const resp = await fetch('/api/auth/staff-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role,
+          staff_id: staffId,
+          display_name: displayName,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.access_token) {
+        onSelectRole(role, staffId, 'All', displayName, data.access_token);
+        return;
+      }
+    } catch {
+      // Fallback in offline dev
+    }
+    onSelectRole(role, staffId, 'All', displayName, '');
   };
 
   return (
@@ -296,7 +319,7 @@ export default function RoleGate({ onSelectRole }) {
           </div>
           <button
             className="btn btn-amber"
-            onClick={() => onSelectRole('Technical Officer', officerId, 'All', officerName)}
+            onClick={() => handleStaffLogin('Technical Officer', officerId, officerName)}
           >
             Continue as Technical Officer <ArrowRight size={16} />
           </button>
@@ -307,19 +330,19 @@ export default function RoleGate({ onSelectRole }) {
         <span>Internal Operations / NOC Access:</span>
         <button
           className="btn btn-ghost"
-          onClick={() => onSelectRole('Tier-1 NOC / Support Agent', 'NOC-01', 'Fibre', 'NOC Agent')}
+          onClick={() => handleStaffLogin('Tier-1 NOC / Support Agent', 'NOC-01', 'NOC Agent')}
         >
           Tier-1 NOC Agent
         </button>
         <button
           className="btn btn-ghost"
-          onClick={() => onSelectRole('Tier-2 Core Engineer', 'CORE-01', 'Fibre', 'Core Engineer')}
+          onClick={() => handleStaffLogin('Tier-2 Core Engineer', 'CORE-01', 'Core Engineer')}
         >
           Tier-2 Core Engineer
         </button>
         <button
           className="btn btn-ghost"
-          onClick={() => onSelectRole('Sovereign Cloud Auditor', 'AUD-01', 'Fibre', 'Cloud Auditor')}
+          onClick={() => handleStaffLogin('Sovereign Cloud Auditor', 'AUD-01', 'Cloud Auditor')}
         >
           Cloud Auditor
         </button>

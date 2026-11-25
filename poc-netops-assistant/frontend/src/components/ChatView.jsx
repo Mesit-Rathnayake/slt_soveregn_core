@@ -57,6 +57,7 @@ const QUICK_PROMPTS = {
 export default function ChatView({
   userRole,
   serviceSegment = 'Fibre',
+  authToken = '',
   messages,
   setMessages,
   sessionMemory,
@@ -91,9 +92,11 @@ export default function ChatView({
     }));
 
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
       const resp = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           user_input: query,
           user_role: userRole,

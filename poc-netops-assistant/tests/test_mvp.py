@@ -1379,6 +1379,54 @@ def test_round_robin_officer_assignment_and_max_cap():
     assert promoted["assigned_officer"] == t1["assigned_officer"]
 
 
+def test_production_security_tokens_idor_and_rate_limiting():
+    """Verifies HMAC signed session tokens, IDOR prevention, tampering rejection, and OTP rate limiting."""
+    import pytest
+    from fastapi import HTTPException
+    from api.security import SovereignTokenManager, SlidingWindowRateLimiter
+    from api.server import (
+        auth_request_otp,
+        auth_verify_otp,
+        get_account,
+        OTPRequestModel,
+        OTPVerifyModel,
+        rate_limiter,
+    )
+
+    # 1. HMAC Token issuance, verification, and tamper rejection
+    tm = SovereignTokenManager(secret_key="test-secret-key-for-unit-test")
+    tok = tm.issue_token(role="Existing Customer", subject="0112456789", service_segment="Fibre")
+    decoded = tm.verify_token(tok)
+    assert decoded is not None
+    assert decoded["role"] == "Existing Customer"
+    assert decoded["sub"] == "0112456789"
+    # Tampered signature must fail
+    assert tm.verify_token(tok[:-4] + "XXXX") is None
+
+    # 2. IDOR Protection: Customer A's signed Bearer token cannot read Customer B's account
+    rate_limiter.reset()
+    otp_req = auth_request_otp(OTPRequestModel(connection_number="0112456789", channel="SMS"))
+    ver = auth_verify_otp(OTPVerifyModel(connection_number="0112456789", otp_code=otp_req["demo_otp_code"]))
+    bearer = f"Bearer {ver['access_token']}"
+
+    own_acc = get_account("0112456789", authorization=bearer)
+    assert own_acc["account_id"] == "SLT-ACC-0112456789"
+
+    with pytest.raises(HTTPException) as exc_idor:
+        get_account("0112889941", authorization=bearer)
+    assert exc_idor.value.status_code == 403
+
+    # 3. Rate limiter blocks flooding (SMS pumping protection)
+    rl = SlidingWindowRateLimiter()
+    for _ in range(5):
+        ok, _ = rl.allow("otp_test_ip", max_requests=5, window_seconds=300)
+        assert ok is True
+    ok_6th, retry_after = rl.allow("otp_test_ip", max_requests=5, window_seconds=300)
+    assert ok_6th is False
+    assert retry_after >= 1
+
+
+
 
 
 

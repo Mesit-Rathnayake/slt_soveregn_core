@@ -1,6 +1,7 @@
 import os
-import random
 import re
+import secrets
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -124,6 +125,7 @@ class SLTCustomerAccountGateway:
             or loaded_endpoint
             or "https://api.slt.lk/crm/v1/customer"
         )
+        self._lock = threading.RLock()
         self._otp_store: dict[str, dict] = {}
         self._rr_pointer: int = 0
         self._mock_tickets = [
@@ -290,16 +292,17 @@ class SLTCustomerAccountGateway:
 
         ch = "EMAIL" if str(channel).strip().upper() == "EMAIL" else "SMS"
         sub = self._lookup_subscriber_record(digits)
-        otp_code = f"{random.randint(100000, 999999)}"
+        otp_code = f"{secrets.randbelow(900000) + 100000}"
         expires_at = time.time() + 300  # 5 minutes
 
-        self._otp_store[digits] = {
-            "otp": otp_code,
-            "channel": ch,
-            "expires_at": expires_at,
-            "attempts": 0,
-            "service_segment": sub["service_segment"],
-        }
+        with self._lock:
+            self._otp_store[digits] = {
+                "otp": otp_code,
+                "channel": ch,
+                "expires_at": expires_at,
+                "attempts": 0,
+                "service_segment": sub["service_segment"],
+            }
 
         target_raw = sub["email"] if ch == "EMAIL" else sub["mobile"]
         masked_target = self._mask_contact(target_raw, ch)
@@ -319,23 +322,26 @@ class SLTCustomerAccountGateway:
     def verify_otp(self, connection_number: str, otp_code: str) -> dict:
         """Verifies the 6-digit OTP and returns the subscriber's full profile with auto-detected service type."""
         digits = self._normalize_connection_number(connection_number)
-        entry = self._otp_store.get(digits)
-        if not entry:
-            return {"verified": False, "error": "No active OTP found for this connection number. Please request a new OTP."}
-        if time.time() > entry["expires_at"]:
+        with self._lock:
+            entry = self._otp_store.get(digits)
+            if not entry:
+                return {"verified": False, "error": "No active OTP found for this connection number. Please request a new OTP."}
+            if time.time() > entry["expires_at"]:
+                self._otp_store.pop(digits, None)
+                return {"verified": False, "error": "OTP has expired. Please request a new OTP."}
+
+            entry["attempts"] += 1
+            if entry["attempts"] > 5:
+                self._otp_store.pop(digits, None)
+                return {"verified": False, "error": "Too many failed OTP attempts. Please request a new OTP."}
+
+            if not secrets.compare_digest(str(otp_code).strip(), entry["otp"]):
+                return {"verified": False, "error": "Invalid OTP code. Please check and try again."}
+
             self._otp_store.pop(digits, None)
-            return {"verified": False, "error": "OTP has expired. Please request a new OTP."}
+            seg = entry["service_segment"]
 
-        entry["attempts"] += 1
-        if entry["attempts"] > 5:
-            self._otp_store.pop(digits, None)
-            return {"verified": False, "error": "Too many failed OTP attempts. Please request a new OTP."}
-
-        if str(otp_code).strip() != entry["otp"]:
-            return {"verified": False, "error": "Invalid OTP code. Please check and try again."}
-
-        self._otp_store.pop(digits, None)
-        profile = self.get_account_profile(digits, service_segment=entry["service_segment"])
+        profile = self.get_account_profile(digits, service_segment=seg)
         return {
             "verified": True,
             "connection_number": digits,
@@ -550,37 +556,38 @@ class SLTCustomerAccountGateway:
         priority = "CRITICAL / HIGH" if is_critical else "NORMAL"
         target_sla = "Within 4 Hours (High Priority Optical/Line Fault)" if is_critical else "Within 8 Hours"
 
-        assigned_officer, initial_status = self._assign_least_loaded_officer()
+        with self._lock:
+            assigned_officer, initial_status = self._assign_least_loaded_officer()
 
-        random_num = random.randint(3000, 9999)
-        ticket_id = f"FLT-2026-{random_num}"
-        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            random_num = secrets.randbelow(7000) + 3000
+            ticket_id = f"FLT-2026-{random_num}"
+            created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        ticket_record = {
-            "ticket_id": ticket_id,
-            "account_id": acc_num,
-            "service_type": category,
-            "fault_category": fault_category,
-            "led_status": led_status,
-            "router_restarted": bool(router_restarted),
-            "affected_devices": affected_devices,
-            "issue_started": issue_started,
-            "impact_level": impact_level,
-            "status": initial_status,
-            "priority": priority,
-            "assigned_team": division,
-            "assigned_officer": assigned_officer,
-            "target_sla": target_sla,
-            "created_at": created_at,
-            "issue_description": issue_description,
-            "contact_name": contact_name or "Kasun Perera",
-            "contact_number": contact_number or "071 234 5678",
-            "service_address": service_address or "Registered Premises Address",
-            "preferred_visit_slot": preferred_visit_slot,
-            "officer_updates": [],
-            "is_mock_ticket": not self.is_live_crm_enabled
-        }
-        self._mock_tickets.append(ticket_record)
+            ticket_record = {
+                "ticket_id": ticket_id,
+                "account_id": acc_num,
+                "service_type": category,
+                "fault_category": fault_category,
+                "led_status": led_status,
+                "router_restarted": bool(router_restarted),
+                "affected_devices": affected_devices,
+                "issue_started": issue_started,
+                "impact_level": impact_level,
+                "status": initial_status,
+                "priority": priority,
+                "assigned_team": division,
+                "assigned_officer": assigned_officer,
+                "target_sla": target_sla,
+                "created_at": created_at,
+                "issue_description": issue_description,
+                "contact_name": contact_name or "Kasun Perera",
+                "contact_number": contact_number or "071 234 5678",
+                "service_address": service_address or "Registered Premises Address",
+                "preferred_visit_slot": preferred_visit_slot,
+                "officer_updates": [],
+                "is_mock_ticket": not self.is_live_crm_enabled
+            }
+            self._mock_tickets.append(ticket_record)
 
         restart_label = "Yes (Already restarted)" if router_restarted else "No"
         assignment_line = (
@@ -663,43 +670,44 @@ class SLTCustomerAccountGateway:
         Enforces MAX_IN_PROGRESS_PER_OFFICER and auto-promotes QUEUED tickets on resolution.
         """
         clean_tid = ticket_id.strip().upper()
-        for t in self._mock_tickets:
-            if t["ticket_id"].upper() == clean_tid:
-                target_status = status.strip().upper() if status else t["status"]
-                target_officer = officer_name.strip() if officer_name else t.get("assigned_officer", "")
+        with self._lock:
+            for t in self._mock_tickets:
+                if t["ticket_id"].upper() == clean_tid:
+                    target_status = status.strip().upper() if status else t["status"]
+                    target_officer = officer_name.strip() if officer_name else t.get("assigned_officer", "")
 
-                # Enforce max In-Progress cap if moving a ticket into active state for an officer
-                if target_status in self.ACTIVE_WORKLOAD_STATUSES and target_officer:
-                    active_for_officer = sum(
-                        1 for other in self._mock_tickets
-                        if other["ticket_id"] != t["ticket_id"]
-                        and other.get("assigned_officer") == target_officer
-                        and other["status"] in self.ACTIVE_WORKLOAD_STATUSES
-                    )
-                    if active_for_officer >= self.MAX_IN_PROGRESS_PER_OFFICER:
-                        raise ValueError(
-                            f"{target_officer} already has {active_for_officer}/{self.MAX_IN_PROGRESS_PER_OFFICER} "
-                            f"active In-Progress tasks (maximum capacity reached). Resolve an existing ticket first."
+                    # Enforce max In-Progress cap if moving a ticket into active state for an officer
+                    if target_status in self.ACTIVE_WORKLOAD_STATUSES and target_officer:
+                        active_for_officer = sum(
+                            1 for other in self._mock_tickets
+                            if other["ticket_id"] != t["ticket_id"]
+                            and other.get("assigned_officer") == target_officer
+                            and other["status"] in self.ACTIVE_WORKLOAD_STATUSES
                         )
+                        if active_for_officer >= self.MAX_IN_PROGRESS_PER_OFFICER:
+                            raise ValueError(
+                                f"{target_officer} already has {active_for_officer}/{self.MAX_IN_PROGRESS_PER_OFFICER} "
+                                f"active In-Progress tasks (maximum capacity reached). Resolve an existing ticket first."
+                            )
 
-                if status:
-                    t["status"] = target_status
+                    if status:
+                        t["status"] = target_status
+                        if t["status"] == "RESOLVED":
+                            t["resolved_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    if officer_name:
+                        t["assigned_officer"] = target_officer
+                    if customer_message or internal_note or contact_channel:
+                        t.setdefault("officer_updates", []).append({
+                            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            "officer_name": target_officer or "Technical Officer",
+                            "channel": contact_channel or "Portal Update",
+                            "message": (customer_message or "").strip(),
+                            "internal_note": (internal_note or "").strip(),
+                            "status_change": t["status"]
+                        })
+
+                    # Auto-promote any QUEUED tickets if an officer just freed up a slot
                     if t["status"] == "RESOLVED":
-                        t["resolved_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                if officer_name:
-                    t["assigned_officer"] = target_officer
-                if customer_message or internal_note or contact_channel:
-                    t.setdefault("officer_updates", []).append({
-                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "officer_name": target_officer or "Technical Officer",
-                        "channel": contact_channel or "Portal Update",
-                        "message": (customer_message or "").strip(),
-                        "internal_note": (internal_note or "").strip(),
-                        "status_change": t["status"]
-                    })
-
-                # Auto-promote any QUEUED tickets if an officer just freed up a slot
-                if t["status"] == "RESOLVED":
-                    self._promote_queued_tickets()
-                return t
+                        self._promote_queued_tickets()
+                    return t
         return None

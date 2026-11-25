@@ -19,6 +19,7 @@ export default function App() {
   const [accountNumber, setAccountNumber] = useState('SLT-ACC-0112456789');
   const [serviceSegment, setServiceSegment] = useState('Fibre');
   const [officerName, setOfficerName] = useState('Eng. Nimal Silva');
+  const [authToken, setAuthToken] = useState('');
   const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [sessionMemory, setSessionMemory] = useState({});
@@ -28,8 +29,9 @@ export default function App() {
     role === 'Tier-1 NOC / Support Agent' ||
     role === 'Tier-2 Core Engineer';
 
-  const handleSelectRole = (role, idVal, segment, staffName) => {
+  const handleSelectRole = (role, idVal, segment, staffName, token = '') => {
     setUserRole(role);
+    setAuthToken(token || '');
     if (role === 'Existing Customer' && idVal) setAccountNumber(idVal);
     if (staffName) setOfficerName(staffName);
     setServiceSegment(segment || 'Fibre');
@@ -122,17 +124,19 @@ export default function App() {
 
       <main className="main-content">
         {activeTab === 'officer' && canManageTickets ? (
-          <TechnicalOfficerView userRole={userRole} defaultOfficerName={officerName} />
+          <TechnicalOfficerView userRole={userRole} defaultOfficerName={officerName} authToken={authToken} />
         ) : activeTab === 'account' && canUseAccountPortal ? (
           <AccountTicketsView
             userRole={userRole}
             accountNumber={accountNumber}
             serviceSegment={serviceSegment}
+            authToken={authToken}
           />
         ) : (
           <ChatView
             userRole={userRole}
             serviceSegment={serviceSegment}
+            authToken={authToken}
             messages={messages}
             setMessages={setMessages}
             sessionMemory={sessionMemory}

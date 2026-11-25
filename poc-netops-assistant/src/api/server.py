@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 from agent.governance import SovereignGovernanceManager
 from agent.orchestrator import SLTMobitelUnifiedAgent
+from api.security import SovereignTokenManager, SlidingWindowRateLimiter
 from retrieval.cloudfront_gateway import SLTCloudFrontEdgeGateway
 
 manuals_dir = BASE_DIR / "data" / "approved_manuals"
@@ -25,20 +26,103 @@ agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
 if not hasattr(agent.rag.aws_kb_client, "cloudfront"):
     agent.rag.aws_kb_client.cloudfront = SLTCloudFrontEdgeGateway(env_path=BASE_DIR / ".env")
 governance = SovereignGovernanceManager(audit_log_path=audit_log_path)
+token_manager = SovereignTokenManager()
+rate_limiter = SlidingWindowRateLimiter()
+
+IS_PRODUCTION = os.getenv("SLT_ENV", "dev").strip().lower() == "prod"
+STAFF_ACCESS_PIN = os.getenv("SLT_STAFF_ACCESS_PIN", "SLT-OPS-2026").strip()
+
+allowed_origins_env = os.getenv(
+    "SLT_ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000",
+)
+ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 
 app = FastAPI(
     title="SLTMobitel Sovereign AI Platform API",
-    version="1.0.0",
-    description="FastAPI backend for the SLTMobitel React Customer & NetOps AI Portal."
+    version="1.1.0",
+    description="Hardened FastAPI backend for SLTMobitel Customer & Technical Officer Portal.",
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-User-Role"],
 )
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=()"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _client_ip(request: Request | None) -> str:
+    if request is None:
+        return "local-test"
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate_limit(bucket: str, max_requests: int, window_seconds: int):
+    allowed, retry_after = rate_limiter.allow(bucket, max_requests, window_seconds)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Please wait {retry_after} seconds and try again.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def _resolve_identity(
+    authorization: str | None,
+    fallback_role: str | None,
+    *,
+    allow_anonymous_new_customer: bool = False,
+) -> dict:
+    """
+    Resolves caller identity:
+    - If Authorization: Bearer <token> is supplied, cryptographically verifies signature & expiry.
+    - In production (SLT_ENV=prod), privileged roles strictly require a verified Bearer token.
+    - In local dev / test mode, allows fallback_role when no Authorization header is sent.
+    """
+    if authorization and isinstance(authorization, str) and authorization.strip().lower().startswith("bearer "):
+        raw_token = authorization.strip()[7:].strip()
+        payload = token_manager.verify_token(raw_token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired session token. Please sign in again.")
+        return {
+            "role": payload["role"],
+            "subject": payload.get("sub", ""),
+            "service_segment": payload.get("seg", "Fibre"),
+            "authenticated": True,
+        }
+
+    role = fallback_role or ("New Customer" if allow_anonymous_new_customer else "")
+    if IS_PRODUCTION and role != "New Customer":
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Please verify via OTP or Staff Login."
+        )
+    return {
+        "role": role,
+        "subject": "",
+        "service_segment": None,
+        "authenticated": False,
+    }
 
 
 class ChatRequest(BaseModel):
@@ -92,6 +176,13 @@ class OTPVerifyModel(BaseModel):
     otp_code: str = Field(..., min_length=4, max_length=8)
 
 
+class StaffLoginModel(BaseModel):
+    role: str = Field(default="Technical Officer")
+    staff_id: str = Field(default="TO-101")
+    display_name: str = Field(default="Eng. Nimal Silva")
+    access_pin: str = Field(default="")
+
+
 @app.get("/api/health")
 def health_check():
     tools = [t["name"] for t in agent.mcp_server.list_tools()]
@@ -99,6 +190,7 @@ def health_check():
     return {
         "status": "healthy",
         "service": "SLTMobitel Sovereign AI Platform",
+        "environment": "prod" if IS_PRODUCTION else "dev",
         "mcp_tools": tools,
         "crm_live_mode": agent.mcp_server.account_gateway.is_live_crm_enabled,
         "edge_cache": cf_metrics,
@@ -113,7 +205,10 @@ def list_roles():
 
 
 @app.post("/api/auth/request-otp")
-def auth_request_otp(req: OTPRequestModel):
+def auth_request_otp(req: OTPRequestModel, request: Request = None):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"otp_req_ip:{ip}", max_requests=10, window_seconds=300)
+    _enforce_rate_limit(f"otp_req_num:{req.connection_number}", max_requests=5, window_seconds=300)
     try:
         return agent.mcp_server.account_gateway.request_otp(
             connection_number=req.connection_number,
@@ -124,21 +219,76 @@ def auth_request_otp(req: OTPRequestModel):
 
 
 @app.post("/api/auth/verify-otp")
-def auth_verify_otp(req: OTPVerifyModel):
+def auth_verify_otp(req: OTPVerifyModel, request: Request = None):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"otp_ver_ip:{ip}", max_requests=15, window_seconds=300)
     res = agent.mcp_server.account_gateway.verify_otp(
         connection_number=req.connection_number,
         otp_code=req.otp_code,
     )
     if not res.get("verified"):
         raise HTTPException(status_code=401, detail=res.get("error", "OTP verification failed."))
-    return res
+
+    access_token = token_manager.issue_token(
+        role="Existing Customer",
+        subject=res["connection_number"],
+        service_segment=res["service_segment"],
+        display_name=res["profile"].get("customer_name", ""),
+    )
+    return {**res, "access_token": access_token, "token_type": "Bearer"}
+
+
+@app.post("/api/auth/staff-login")
+def auth_staff_login(req: StaffLoginModel, request: Request = None):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"staff_login:{ip}", max_requests=10, window_seconds=300)
+    allowed_staff_roles = {
+        "Technical Officer",
+        "Tier-1 NOC / Support Agent",
+        "Tier-2 Core Engineer",
+        "Sovereign Cloud Auditor",
+    }
+    if req.role not in allowed_staff_roles:
+        raise HTTPException(status_code=400, detail="Invalid staff role.")
+    if IS_PRODUCTION and req.access_pin != STAFF_ACCESS_PIN:
+        raise HTTPException(status_code=401, detail="Invalid staff access PIN.")
+
+    access_token = token_manager.issue_token(
+        role=req.role,
+        subject=req.staff_id,
+        service_segment="All",
+        display_name=req.display_name,
+    )
+    return {
+        "authenticated": True,
+        "role": req.role,
+        "staff_id": req.staff_id,
+        "display_name": req.display_name,
+        "access_token": access_token,
+        "token_type": "Bearer",
+    }
 
 
 @app.post("/api/chat")
-def chat(req: ChatRequest):
-    if req.user_role not in SovereignGovernanceManager.ROLES:
-        raise HTTPException(status_code=400, detail=f"Invalid role: {req.user_role}")
-    if not governance.check_permission(req.user_role, "can_use_ai_agent"):
+def chat(
+    req: ChatRequest,
+    authorization: str | None = Header(default=None),
+    request: Request = None,
+):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"chat:{ip}", max_requests=30, window_seconds=60)
+
+    ident = _resolve_identity(
+        authorization,
+        req.user_role,
+        allow_anonymous_new_customer=True,
+    )
+    effective_role = ident["role"]
+    effective_segment = ident["service_segment"] or req.service_segment
+
+    if effective_role not in SovereignGovernanceManager.ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {effective_role}")
+    if not governance.check_permission(effective_role, "can_use_ai_agent"):
         raise HTTPException(
             status_code=403,
             detail="AI Assistant access is not enabled for the Technical Officer role. Use the Fault Ticket Review Queue."
@@ -151,12 +301,12 @@ def chat(req: ChatRequest):
         top_k=req.top_k,
         conversation_history=req.conversation_history[-10:],
         session_memory=req.session_memory,
-        user_role=req.user_role,
-        service_segment=req.service_segment,
+        user_role=effective_role,
+        service_segment=effective_segment,
     )
 
     governance.log_event(
-        user_role=req.user_role,
+        user_role=effective_role,
         action_type=f"WEB_{turn_res['intent_route']}",
         ticket_id="WEB-CHAT",
         redactions_count=turn_res["redactions_applied"],
@@ -174,24 +324,50 @@ def get_account(
     account_id: str,
     service_segment: str | None = None,
     x_user_role: str = Header(default="Existing Customer"),
+    authorization: str | None = Header(default=None),
 ):
-    if not governance.check_permission(x_user_role, "can_view_account_stats"):
+    ident = _resolve_identity(authorization, x_user_role)
+    effective_role = ident["role"]
+    if not governance.check_permission(effective_role, "can_view_account_stats"):
         raise HTTPException(
             status_code=403,
             detail="Account overview requires an Existing Customer subscription or authorized staff role."
         )
+
+    # IDOR Protection: Authenticated Existing Customers may only query their own verified connection
+    if ident["authenticated"] and effective_role == "Existing Customer" and ident["subject"]:
+        req_digits = agent.mcp_server.account_gateway._normalize_connection_number(account_id)
+        sub_digits = agent.mcp_server.account_gateway._normalize_connection_number(ident["subject"])
+        if req_digits != sub_digits:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: you may only view your own verified connection account."
+            )
+
     return agent.mcp_server.account_gateway.get_account_profile(account_id, service_segment=service_segment)
 
 
 @app.post("/api/tickets")
-def create_ticket(req: FaultTicketRequest):
-    if not governance.check_permission(req.user_role, "can_log_fault_tickets"):
+def create_ticket(
+    req: FaultTicketRequest,
+    authorization: str | None = Header(default=None),
+    request: Request = None,
+):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"ticket_create:{ip}", max_requests=10, window_seconds=60)
+
+    ident = _resolve_identity(authorization, req.user_role)
+    effective_role = ident["role"]
+    if not governance.check_permission(effective_role, "can_log_fault_tickets"):
         raise HTTPException(
             status_code=403,
             detail="Fault ticket creation is restricted to Existing Customers and NOC Support Agents."
         )
+
+    target_account = ident["subject"] if (ident["authenticated"] and effective_role == "Existing Customer" and ident["subject"]) else req.account_number
+
     res = agent.mcp_server.account_gateway.create_fault_ticket(
-        identifier=req.account_number,
+        identifier=target_account,
         service_type=req.service_type,
         issue_description=req.issue_description,
         contact_number=req.contact_number,
@@ -206,7 +382,7 @@ def create_ticket(req: FaultTicketRequest):
         preferred_visit_slot=req.preferred_visit_slot,
     )
     governance.log_event(
-        user_role=req.user_role,
+        user_role=effective_role,
         action_type="FAULT_TICKET_CREATED",
         ticket_id=res["ticket_id"],
         redactions_count=0,
@@ -219,8 +395,13 @@ def create_ticket(req: FaultTicketRequest):
 
 
 @app.get("/api/tickets/{ticket_id}")
-def get_ticket(ticket_id: str, x_user_role: str = Header(default="Existing Customer")):
-    if not governance.check_permission(x_user_role, "can_view_account_stats"):
+def get_ticket(
+    ticket_id: str,
+    x_user_role: str = Header(default="Existing Customer"),
+    authorization: str | None = Header(default=None),
+):
+    ident = _resolve_identity(authorization, x_user_role)
+    if not governance.check_permission(ident["role"], "can_view_account_stats"):
         raise HTTPException(
             status_code=403,
             detail="Ticket status lookup is restricted to Existing Customers and authorized staff."
@@ -229,8 +410,12 @@ def get_ticket(ticket_id: str, x_user_role: str = Header(default="Existing Custo
 
 
 @app.get("/api/officer/workloads")
-def officer_workloads(x_user_role: str = Header(default="Technical Officer")):
-    if not governance.check_permission(x_user_role, "can_manage_fault_tickets"):
+def officer_workloads(
+    x_user_role: str = Header(default="Technical Officer"),
+    authorization: str | None = Header(default=None),
+):
+    ident = _resolve_identity(authorization, x_user_role)
+    if not governance.check_permission(ident["role"], "can_manage_fault_tickets"):
         raise HTTPException(
             status_code=403,
             detail="Officer workload metrics are restricted to Technical Officers and NOC Engineers."
@@ -243,8 +428,10 @@ def officer_list_tickets(
     status: str | None = None,
     officer: str | None = None,
     x_user_role: str = Header(default="Technical Officer"),
+    authorization: str | None = Header(default=None),
 ):
-    if not governance.check_permission(x_user_role, "can_manage_fault_tickets"):
+    ident = _resolve_identity(authorization, x_user_role)
+    if not governance.check_permission(ident["role"], "can_manage_fault_tickets"):
         raise HTTPException(
             status_code=403,
             detail="Fault ticket queue management is restricted to Technical Officers and NOC Engineers."
@@ -258,8 +445,13 @@ def officer_list_tickets(
 
 
 @app.patch("/api/officer/tickets/{ticket_id}")
-def officer_update_ticket(ticket_id: str, req: OfficerTicketUpdateRequest):
-    if not governance.check_permission(req.user_role, "can_manage_fault_tickets"):
+def officer_update_ticket(
+    ticket_id: str,
+    req: OfficerTicketUpdateRequest,
+    authorization: str | None = Header(default=None),
+):
+    ident = _resolve_identity(authorization, req.user_role)
+    if not governance.check_permission(ident["role"], "can_manage_fault_tickets"):
         raise HTTPException(
             status_code=403,
             detail="Only Technical Officers and NOC Engineers can update fault tickets or log customer contacts."
@@ -278,7 +470,7 @@ def officer_update_ticket(ticket_id: str, req: OfficerTicketUpdateRequest):
     if not updated:
         raise HTTPException(status_code=404, detail=f"Fault ticket '{ticket_id}' not found.")
     governance.log_event(
-        user_role=req.user_role,
+        user_role=ident["role"],
         action_type="OFFICER_TICKET_UPDATE",
         ticket_id=ticket_id,
         redactions_count=0,
@@ -291,7 +483,9 @@ def officer_update_ticket(ticket_id: str, req: OfficerTicketUpdateRequest):
 
 
 @app.post("/api/voice/tts")
-def synthesize_tts(req: TTSRequest):
+def synthesize_tts(req: TTSRequest, request: Request = None):
+    ip = _client_ip(request)
+    _enforce_rate_limit(f"tts:{ip}", max_requests=20, window_seconds=60)
     mp3_bytes = agent.voice_agent.synthesize_speech_mp3(req.text)
     if not mp3_bytes:
         raise HTTPException(status_code=503, detail="TTS synthesis unavailable.")
@@ -299,8 +493,13 @@ def synthesize_tts(req: TTSRequest):
 
 
 @app.get("/api/audit-logs")
-def get_audit_logs(limit: int = 30, x_user_role: str = Header(default="Tier-2 Core Engineer")):
-    if not governance.check_permission(x_user_role, "can_view_audit_logs"):
+def get_audit_logs(
+    limit: int = 30,
+    x_user_role: str = Header(default="Tier-2 Core Engineer"),
+    authorization: str | None = Header(default=None),
+):
+    ident = _resolve_identity(authorization, x_user_role)
+    if not governance.check_permission(ident["role"], "can_view_audit_logs"):
         raise HTTPException(status_code=403, detail="Audit logs require Tier-2 Engineer or Auditor role.")
     return {"logs": governance.read_audit_logs(limit=limit)}
 
@@ -313,4 +512,4 @@ if FRONTEND_DIST.exists():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=not IS_PRODUCTION)

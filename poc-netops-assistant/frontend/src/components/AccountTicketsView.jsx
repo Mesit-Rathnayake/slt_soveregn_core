@@ -66,7 +66,12 @@ const LED_OPTIONS = [
   'Not Applicable (PEOTV / Voice)',
 ];
 
-export default function AccountTicketsView({ userRole, accountNumber, serviceSegment = 'Fibre' }) {
+export default function AccountTicketsView({ userRole, accountNumber, serviceSegment = 'Fibre', authToken = '' }) {
+  const authHeaders = (extra = {}) => ({
+    ...extra,
+    'X-User-Role': userRole,
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  });
   const initialSvc = SEGMENT_TO_SERVICE[serviceSegment] || 'Fibre';
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -106,7 +111,7 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
     try {
       const resp = await fetch(
         `/api/account/${encodeURIComponent(accountNumber || '0112456789')}`,
-        { headers: { 'X-User-Role': userRole } }
+        { headers: authHeaders() }
       );
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -173,7 +178,7 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
 
       const resp = await fetch('/api/tickets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           account_number: accountNumber || 'SLT-ACC-0112456789',
           service_type: serviceType,
