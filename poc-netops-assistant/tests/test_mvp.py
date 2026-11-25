@@ -1469,6 +1469,25 @@ def test_technical_officer_otp_verification():
     assert q["count"] >= 1
 
 
+def test_fibre_vs_broadband_recommendation():
+    """Asking to compare/suggest Fibre vs Broadband returns a grounded comparison of both + docs."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+    res = agent.run_agent(
+        "I am thinking of Getting a new internet connection for my house... what do you suggest fibre or broadband",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+    )
+    full_text = (res["answer_markdown"] + " " + " ".join(res["key_points"])).lower()
+    assert "fibre (ftth)" in full_text
+    assert "4g lte home broadband" in full_text
+    assert "fiber starter" in full_text
+    assert "rs. 535" in full_text
+    assert "1212" in full_text
+    assert "billing proof" in full_text
+
+
+
 
 
 

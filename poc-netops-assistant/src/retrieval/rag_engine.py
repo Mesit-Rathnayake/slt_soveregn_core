@@ -687,6 +687,33 @@ class SovereignNetOpsRAG:
             ]
             return ans, bullets
 
+        # 2. Fibre vs 4G LTE Home Broadband comparison & new-connection recommendation
+        is_compare_or_recommend_intent = asks(
+            "suggest", "recommend", "recommendation", "which", "better", "best",
+            "compare", "comparison", "difference", "vs", "versus", "choose",
+            "new connection", "new internet", "for my house", "for my home"
+        )
+        if (
+            not is_troubleshoot_intent
+            and not is_quota_or_balance_intent
+            and asks("fibre", "fiber", "ftth")
+            and asks("broadband", "lte", "4g", "hbb")
+            and (is_compare_or_recommend_intent or asks("or"))
+            and grounded("fibre", "fiber", "ftth", "lte", "4g", "broadband", "hbb", "package", "packages", "rs")
+        ):
+            ans = (
+                "For a new home internet connection, **SLT Fibre (FTTH)** is recommended if Fibre coverage "
+                "is available at your address and you want higher speeds (`100 Mbps`–`1 Gbps`), while "
+                "**4G LTE Home Broadband** is ideal for lower monthly budgets or quick wireless setup:"
+            )
+            bullets = [
+                "**Choose SLT Fibre (FTTH) for high speeds (`100 Mbps` to `1 Gbps`) & heavy home use:** Starts at **Fiber Starter** (`80 GB` — **Rs. 2,690**, `100/50 Mbps`) and bundled Trio plans (**Trio Vibe** `40 GB` — **Rs. 3,530**; **Trio Shine** `100 GB` — **Rs. 4,950**), with **Unlimited Home** from **Rs. 5,900** (`100/50 Mbps`) up to `1000/300 Mbps` (**Unlimited Turbo** — **Rs. 39,900**).",
+                "**Choose 4G LTE Home Broadband for flexible, budget-friendly wireless plans:** Volume plans start at **`20 GB` — Rs. 535** (30 days), **HBB Anytime 899** (`35 GB`), **HBB Anytime 1899** (`75 GB`), up to `400 GB` (**Rs. 7,990**). Unlimited options include **LTE Unlimited 2 / 4 / 8 Mbps** (**Rs. 2,950 / Rs. 5,150 / Rs. 7,090**) and **Unlimited LTE Flash 5 / 10** (**Rs. 2,350 / Rs. 4,090**, with free unlimited internet `12 midnight – 7 AM`). **4G LTE Postpaid (SIM Only)** is **Rs. 1,000** with no commitment period.",
+                "**Required documents for a new connection:** Completed application form, **ID proof** (NIC, Driving License, or Passport), and **valid billing proof** (water/electricity/fixed telephone bill, credit card statement, or current account statement).",
+                "**Next step:** Call **`1212`** or visit your nearest SLT branch to check **Fibre (FTTH)** availability at your house (if you already have a Megaline, ask about **Megaline → Fibre migration** at **Rs. 5,000** promotional / **Rs. 7,500** standard)."
+            ]
+            return ans, bullets
+
         # 2A. Fibre packages
         if not is_troubleshoot_intent and not is_quota_or_balance_intent and asks("fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo") and grounded(
                 "fibre", "fiber", "ftth", "trio", "megaline", "ultra", "turbo"):
