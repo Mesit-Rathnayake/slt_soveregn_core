@@ -11,15 +11,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-const SAMPLE_LINES = [
-  { num: '0112456789', label: 'Fibre' },
-  { num: '0112889941', label: 'Broadband' },
-  { num: '0812233445', label: 'PEOTV' },
-  { num: '0712345678', label: 'SLT Mobitel' },
-];
-
 export default function RoleGate({ onSelectRole }) {
-  const [connectionNumber, setConnectionNumber] = useState('0112456789');
+  const [connectionNumber, setConnectionNumber] = useState('');
   const [otpChannel, setOtpChannel] = useState('SMS');
   const [otpStep, setOtpStep] = useState('request');
   const [otpCode, setOtpCode] = useState('');
@@ -139,27 +132,15 @@ export default function RoleGate({ onSelectRole }) {
             {otpStep === 'request' ? (
               <form onSubmit={handleRequestOtp}>
                 <div className="account-input-group">
-                  <label htmlFor="conn-input">Connection Number</label>
+                  <label htmlFor="conn-input">Registered Connection Number</label>
                   <input
                     id="conn-input"
                     type="text"
                     value={connectionNumber}
                     onChange={(e) => setConnectionNumber(e.target.value)}
-                    placeholder="e.g., 0112456789"
+                    placeholder="Enter your 10-digit connection number (e.g. 0112456789)"
                     required
                   />
-                  <div className="demo-pills">
-                    {SAMPLE_LINES.map((item) => (
-                      <button
-                        key={item.num}
-                        type="button"
-                        className={`demo-pill ${connectionNumber === item.num ? 'active' : ''}`}
-                        onClick={() => setConnectionNumber(item.num)}
-                      >
-                        {item.label} · {item.num}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 <div className="account-input-group">
