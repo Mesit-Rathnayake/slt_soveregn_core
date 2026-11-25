@@ -169,51 +169,39 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
 
       {/* Technical Officer Workload & Capacity Monitor */}
       {officerRoster.length > 0 && (
-        <div className="panel-card">
-          <h3>
-            <Users size={18} /> Technical Officer Workload &amp; Round-Robin Capacity
-          </h3>
-          <div className="dashboard-grid" style={{ marginBottom: 0 }}>
-            {officerRoster.map((o) => {
-              const pct = Math.min(100, Math.round((o.in_progress_count / o.max_in_progress) * 100));
-              return (
-                <div
-                  key={o.officer_id}
-                  className="stat-card"
-                  style={{
-                    boxShadow: 'none',
-                    borderColor: o.at_capacity ? '#fca5a5' : '#e2e8f0',
-                    background: o.at_capacity ? '#fef2f2' : '#f8fafc',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                    <strong style={{ fontSize: '0.88rem' }}>{o.name}</strong>
-                    <span className={`priority-pill ${o.at_capacity ? 'high' : 'normal'}`}>
-                      {o.in_progress_count} / {o.max_in_progress}
-                    </span>
-                  </div>
-                  <div className="stat-sub">{o.division}</div>
-                  <div className="progress-track">
-                    <div
-                      className="progress-fill"
-                      style={{
-                        width: `${pct}%`,
-                        background: o.at_capacity ? '#dc2626' : undefined,
-                      }}
-                    />
-                  </div>
-                  <div className="stat-sub" style={{ marginTop: 6 }}>
-                    {o.at_capacity ? 'At Max Capacity' : 'Available for Next Assignment'} · Resolved: {o.resolved_count}
-                  </div>
+        <div className="capacity-strip">
+          {officerRoster.map((o) => {
+            const pct = Math.min(100, Math.round((o.in_progress_count / o.max_in_progress) * 100));
+            return (
+              <div key={o.officer_id} className={`capacity-chip ${o.at_capacity ? 'full' : ''}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                  <strong style={{ fontSize: '0.84rem' }}>{o.name}</strong>
+                  <span className={`priority-pill ${o.at_capacity ? 'high' : 'normal'}`}>
+                    {o.in_progress_count} / {o.max_in_progress}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${pct}%`,
+                      background: o.at_capacity ? '#dc2626' : undefined,
+                    }}
+                  />
+                </div>
+                <div className="stat-sub" style={{ fontSize: '0.74rem' }}>
+                  {o.at_capacity ? 'Max Capacity' : 'Available'} · Resolved: {o.resolved_count}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
+      {/* Master-Detail Split Layout: Queue Left, Review Right */}
+      <div className="officer-split">
       {/* Filter & Queue Table */}
-      <div className="panel-card">
+      <div className="panel-card" style={{ marginBottom: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: '1rem' }}>
           <h3 style={{ margin: 0 }}>
             <ClipboardList size={18} /> Customer Fault Ticket Queue
@@ -314,7 +302,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
 
       {/* Selected Ticket Review & Customer Contact Console */}
       {selectedTicket && (
-        <div className="panel-card">
+        <div className="panel-card" style={{ marginBottom: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: '1rem' }}>
             <h3 style={{ margin: 0 }}>
               <Wrench size={18} /> Review Ticket: <code>{selectedTicket.ticket_id}</code>
@@ -477,6 +465,7 @@ export default function TechnicalOfficerView({ userRole, defaultOfficerName = 'E
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

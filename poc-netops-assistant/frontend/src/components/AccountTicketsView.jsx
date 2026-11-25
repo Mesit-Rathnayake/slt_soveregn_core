@@ -76,6 +76,7 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [error, setError] = useState('');
+  const [subTab, setSubTab] = useState('overview'); // 'overview' | 'report' | 'track'
 
   // 3-Step Fault Ticket Wizard State
   const [step, setStep] = useState(1);
@@ -245,8 +246,30 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
 
   return (
     <div>
+      {/* Clean Sub-Navigation to Avoid Long Page Clutter */}
+      <div className="subtabs">
+        <button
+          className={`subtab ${subTab === 'overview' ? 'active' : ''}`}
+          onClick={() => setSubTab('overview')}
+        >
+          <Activity size={15} /> Account &amp; Tickets
+        </button>
+        <button
+          className={`subtab ${subTab === 'report' ? 'active' : ''}`}
+          onClick={() => setSubTab('report')}
+        >
+          <Ticket size={15} /> Report a Fault
+        </button>
+        <button
+          className={`subtab ${subTab === 'track' ? 'active' : ''}`}
+          onClick={() => setSubTab('track')}
+        >
+          <Search size={15} /> Track Ticket ID
+        </button>
+      </div>
+
       {/* Account Overview Stats */}
-      {profile && (
+      {subTab === 'overview' && profile && (
         <div className="dashboard-grid">
           <div className="stat-card">
             <div className="stat-label">Account &amp; Status</div>
@@ -299,7 +322,7 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
       )}
 
       {/* Current & Previous Tickets Summary */}
-      {profile && (
+      {subTab === 'overview' && profile && (
         <div className="panel-card">
           <h3>
             <Activity size={18} /> Your Support Tickets (Current &amp; Previous)
@@ -429,6 +452,7 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
       )}
 
       {/* 3-Step Descriptive Fault Ticket Wizard */}
+      {subTab === 'report' && (
       <div className="panel-card">
         <h3>
           <Ticket size={18} /> Lodge a Detailed Service Fault Ticket
@@ -711,8 +735,10 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
           </div>
         )}
       </div>
+      )}
 
-      {/* Track Ticket Status & Recent Tickets */}
+      {/* Track Ticket Status */}
+      {subTab === 'track' && (
       <div className="panel-card">
         <h3>
           <Search size={18} /> Track Existing Ticket Status
@@ -741,87 +767,8 @@ export default function AccountTicketsView({ userRole, accountNumber, serviceSeg
             <MarkdownText text={lookupResult.summary_markdown} />
           </div>
         )}
-
-        {profile?.recent_tickets?.length > 0 && (
-          <div style={{ marginTop: '1rem' }}>
-            <h4 style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '0.5rem' }}>
-              <Activity size={14} style={{ verticalAlign: 'middle' }} /> Recent Account Tickets (Click a row to inspect full details)
-            </h4>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Ticket ID</th>
-                  <th>Service &amp; Fault</th>
-                  <th>LED Status</th>
-                  <th>Status</th>
-                  <th>Priority</th>
-                </tr>
-              </thead>
-              <tbody>
-                {profile.recent_tickets.map((t) => (
-                  <tr
-                    key={t.ticket_id}
-                    onClick={() => setSelectedTicket(selectedTicket?.ticket_id === t.ticket_id ? null : t)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td><code>{t.ticket_id}</code></td>
-                    <td>{t.service_type} · {t.fault_category || 'General'}</td>
-                    <td>{t.led_status || 'N/A'}</td>
-                    <td><strong>{t.status}</strong></td>
-                    <td>{t.priority}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {selectedTicket && (
-              <div className="review-box" style={{ marginTop: '0.85rem' }}>
-                <div className="review-header">
-                  <strong>Ticket Details: {selectedTicket.ticket_id}</strong>
-                  <span className="priority-pill normal">{selectedTicket.status}</span>
-                </div>
-                <div className="review-grid">
-                  <div>
-                    <span className="review-label">Assigned Team</span>
-                    <div className="review-val">{selectedTicket.assigned_team}</div>
-                  </div>
-                  <div>
-                    <span className="review-label">SLA &amp; Visit Window</span>
-                    <div className="review-val">
-                      {selectedTicket.target_sla || 'Within 8 Hours'} · {selectedTicket.preferred_visit_slot || 'Anytime'}
-                    </div>
-                  </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <span className="review-label">Premises &amp; Contact</span>
-                    <div className="review-val">
-                      {selectedTicket.service_address || 'Registered Address'} · {selectedTicket.contact_name || 'Subscriber'} ({selectedTicket.contact_number || 'N/A'})
-                    </div>
-                  </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <span className="review-label">Description</span>
-                    <div className="review-val">{selectedTicket.issue_description}</div>
-                  </div>
-                  {selectedTicket.officer_updates?.length > 0 && (
-                    <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
-                      <span className="review-label">Updates from Technical Officer</span>
-                      <div className="timeline" style={{ marginTop: 6 }}>
-                        {selectedTicket.officer_updates.map((upd, idx) => (
-                          <div key={idx} className="timeline-item">
-                            <div className="timeline-meta">
-                              <strong>{upd.officer_name}</strong> · {upd.channel} · <code>{upd.status_change}</code>
-                            </div>
-                            {upd.message && <div className="timeline-msg">{upd.message}</div>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
+      )}
     </div>
   );
 }

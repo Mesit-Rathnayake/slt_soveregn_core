@@ -4,8 +4,6 @@ import {
   UserPlus,
   Wrench,
   CheckCircle2,
-  Lock,
-  Shield,
   ArrowRight,
   Mail,
   Smartphone,
@@ -13,17 +11,22 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
+const SAMPLE_LINES = [
+  { num: '0112456789', label: 'Fibre' },
+  { num: '0112889941', label: 'Broadband' },
+  { num: '0812233445', label: 'PEOTV' },
+  { num: '0712345678', label: 'SLT Mobitel' },
+];
+
 export default function RoleGate({ onSelectRole }) {
-  // Existing Customer OTP Sign-In State
   const [connectionNumber, setConnectionNumber] = useState('0112456789');
   const [otpChannel, setOtpChannel] = useState('SMS');
-  const [otpStep, setOtpStep] = useState('request'); // 'request' | 'verify'
+  const [otpStep, setOtpStep] = useState('request');
   const [otpCode, setOtpCode] = useState('');
   const [otpMeta, setOtpMeta] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Technical Officer State
   const [officerName, setOfficerName] = useState('Eng. Nimal Silva');
   const [officerId, setOfficerId] = useState('TO-101');
 
@@ -41,9 +44,7 @@ export default function RoleGate({ onSelectRole }) {
         }),
       });
       const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.detail || 'Could not send OTP.');
-      }
+      if (!resp.ok) throw new Error(data.detail || 'Could not send OTP.');
       setOtpMeta(data);
       setOtpCode(data.demo_otp_code || '');
       setOtpStep('verify');
@@ -68,9 +69,7 @@ export default function RoleGate({ onSelectRole }) {
         }),
       });
       const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.detail || 'OTP verification failed.');
-      }
+      if (!resp.ok) throw new Error(data.detail || 'OTP verification failed.');
       onSelectRole(
         'Existing Customer',
         data.connection_number,
@@ -90,11 +89,7 @@ export default function RoleGate({ onSelectRole }) {
       const resp = await fetch('/api/auth/staff-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role,
-          staff_id: staffId,
-          display_name: displayName,
-        }),
+        body: JSON.stringify({ role, staff_id: staffId, display_name: displayName }),
       });
       const data = await resp.json();
       if (resp.ok && data.access_token) {
@@ -102,7 +97,7 @@ export default function RoleGate({ onSelectRole }) {
         return;
       }
     } catch {
-      // Fallback in offline dev
+      // Dev fallback
     }
     onSelectRole(role, staffId, 'All', displayName, '');
   };
@@ -110,30 +105,33 @@ export default function RoleGate({ onSelectRole }) {
   return (
     <div className="gate-container">
       <div className="gate-header">
-        <div className="brand-pill">
-          <Shield size={14} /> SLTMobitel Customer Support
+        <div className="slt-wordmark" style={{ fontSize: '1.15rem', color: '#003e78' }}>
+          <span className="slt-mark-badge">SLT</span>
+          <span>SLTMobitel Support</span>
         </div>
-        <h1>Welcome to SLTMobitel Support</h1>
+        <h1>How can we help you today?</h1>
         <p>
-          Existing subscribers sign in with their connection number and OTP — your service type
-          (Fibre, Broadband, PEOTV, or SLT Mobitel) is detected automatically.
+          Sign in with your connection number to manage your account and tickets, or continue as a
+          new visitor to explore packages.
         </p>
       </div>
 
       <div className="gate-cards">
-        {/* Existing Customer Card (Connection Number + OTP) */}
+        {/* Existing Customer Card */}
         <div className="role-card subscriber">
           <div>
-            <div className="role-icon-box green">
-              <UserCheck size={24} />
+            <div className="role-card-head">
+              <div className="role-icon-box green">
+                <UserCheck size={19} />
+              </div>
+              <h2>Existing Customer</h2>
             </div>
-            <h2>Existing Customer</h2>
             <p className="role-desc">
-              Sign in with your connection number &amp; OTP to view account status, credit, tickets, and AI support.
+              Verify via SMS or Email OTP. Your connection type is detected automatically.
             </p>
 
             {authError && (
-              <div className="alert-banner error" style={{ padding: '0.6rem 0.75rem', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+              <div className="alert-banner error" style={{ padding: '0.55rem 0.75rem', fontSize: '0.8rem' }}>
                 <AlertTriangle size={15} /> {authError}
               </div>
             )}
@@ -141,30 +139,38 @@ export default function RoleGate({ onSelectRole }) {
             {otpStep === 'request' ? (
               <form onSubmit={handleRequestOtp}>
                 <div className="account-input-group">
-                  <label htmlFor="conn-input">SLTMobitel Connection Number</label>
+                  <label htmlFor="conn-input">Connection Number</label>
                   <input
                     id="conn-input"
                     type="text"
                     value={connectionNumber}
                     onChange={(e) => setConnectionNumber(e.target.value)}
-                    placeholder="e.g., 0112456789 or 0712345678"
+                    placeholder="e.g., 0112456789"
                     required
                   />
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 4 }}>
-                    Sample lines: <code>0112456789</code> (Fibre) · <code>0112889941</code> (Broadband) ·{' '}
-                    <code>0812233445</code> (PEOTV) · <code>0712345678</code> (SLT Mobitel)
+                  <div className="demo-pills">
+                    {SAMPLE_LINES.map((item) => (
+                      <button
+                        key={item.num}
+                        type="button"
+                        className={`demo-pill ${connectionNumber === item.num ? 'active' : ''}`}
+                        onClick={() => setConnectionNumber(item.num)}
+                      >
+                        {item.label} · {item.num}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
                 <div className="account-input-group">
-                  <label>Receive OTP Via</label>
+                  <label>Send OTP Via</label>
                   <div className="segment-grid">
                     <button
                       type="button"
                       className={`segment-pill ${otpChannel === 'SMS' ? 'active' : ''}`}
                       onClick={() => setOtpChannel('SMS')}
                     >
-                      <Smartphone size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                      <Smartphone size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />
                       SMS
                     </button>
                     <button
@@ -172,29 +178,23 @@ export default function RoleGate({ onSelectRole }) {
                       className={`segment-pill ${otpChannel === 'EMAIL' ? 'active' : ''}`}
                       onClick={() => setOtpChannel('EMAIL')}
                     >
-                      <Mail size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                      <Mail size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />
                       Email
                     </button>
                   </div>
                 </div>
 
                 <button type="submit" className="btn btn-green" disabled={authLoading}>
-                  {authLoading ? 'Sending OTP...' : 'Send OTP Code'} <ArrowRight size={16} />
+                  {authLoading ? 'Sending OTP...' : 'Send OTP'} <ArrowRight size={15} />
                 </button>
               </form>
             ) : (
               <form onSubmit={handleVerifyOtp}>
-                <div
-                  className="alert-banner success"
-                  style={{ padding: '0.65rem 0.8rem', fontSize: '0.8rem', marginBottom: '0.85rem', display: 'block' }}
-                >
-                  <div>
-                    OTP sent via <strong>{otpMeta?.channel}</strong> to{' '}
-                    <code>{otpMeta?.masked_destination}</code>.
-                  </div>
+                <div className="alert-banner success" style={{ display: 'block', fontSize: '0.81rem' }}>
+                  OTP sent via <strong>{otpMeta?.channel}</strong> to <code>{otpMeta?.masked_destination}</code>.
                   {otpMeta?.demo_otp_code && (
                     <div style={{ marginTop: 4 }}>
-                      Verification Code: <strong><code>{otpMeta.demo_otp_code}</code></strong>
+                      Code: <strong><code>{otpMeta.demo_otp_code}</code></strong>
                     </div>
                   )}
                 </div>
@@ -202,7 +202,7 @@ export default function RoleGate({ onSelectRole }) {
                 <div className="account-input-group">
                   <label htmlFor="otp-input">
                     <KeyRound size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                    Enter 6-Digit OTP
+                    6-Digit Verification Code
                   </label>
                   <input
                     id="otp-input"
@@ -210,7 +210,7 @@ export default function RoleGate({ onSelectRole }) {
                     maxLength={6}
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="123456"
+                    placeholder="Enter 6-digit OTP"
                     required
                   />
                 </div>
@@ -227,7 +227,7 @@ export default function RoleGate({ onSelectRole }) {
                     Back
                   </button>
                   <button type="submit" className="btn btn-green" disabled={authLoading}>
-                    {authLoading ? 'Verifying...' : 'Verify & Sign In'} <ArrowRight size={16} />
+                    {authLoading ? 'Verifying...' : 'Verify & Sign In'} <ArrowRight size={15} />
                   </button>
                 </div>
               </form>
@@ -236,116 +236,80 @@ export default function RoleGate({ onSelectRole }) {
         </div>
 
         {/* New Customer Card */}
-        <div className="role-card">
+        <div className="role-card visitor">
           <div>
-            <div className="role-icon-box blue">
-              <UserPlus size={24} />
+            <div className="role-card-head">
+              <div className="role-icon-box blue">
+                <UserPlus size={19} />
+              </div>
+              <h2>New Customer</h2>
             </div>
-            <h2>New Customer</h2>
             <p className="role-desc">
-              Exploring SLTMobitel Fibre, 4G LTE, or PEOTV packages for the first time.
+              Looking for a new Fibre, 4G LTE Broadband, PEOTV, or SLT Mobitel plan?
             </p>
             <ul className="feature-list">
               <li>
-                <CheckCircle2 size={16} className="ok" /> AI Assistant for Plans, Pricing &amp; USSD
+                <CheckCircle2 size={15} className="ok" /> Compare Fibre, 4G LTE &amp; PEOTV packages
               </li>
               <li>
-                <CheckCircle2 size={16} className="ok" /> Filter Packages by Budget &amp; Speed
+                <CheckCircle2 size={15} className="ok" /> Filter plans by monthly budget &amp; speed
               </li>
               <li>
-                <Lock size={16} className="locked" /> Fault Ticketing &amp; Account Stats (Subscribers Only)
+                <CheckCircle2 size={15} className="ok" /> Instant answers on USSD codes &amp; setup
               </li>
             </ul>
           </div>
           <button
             className="btn btn-primary"
-            onClick={() => onSelectRole('New Customer', '', 'Fibre')}
+            onClick={() => onSelectRole('New Customer', '', 'Fibre', '', '')}
           >
-            Continue as New Customer <ArrowRight size={16} />
-          </button>
-        </div>
-
-        {/* Technical Officer Card */}
-        <div className="role-card officer">
-          <div>
-            <div className="role-icon-box amber">
-              <Wrench size={24} />
-            </div>
-            <h2>Technical Officer</h2>
-            <p className="role-desc">
-              For SLT field technicians and officers managing assigned customer fault tickets.
-            </p>
-            <ul className="feature-list">
-              <li>
-                <CheckCircle2 size={16} className="ok" /> Auto Round-Robin Ticket Assignment &amp; Queue
-              </li>
-              <li>
-                <CheckCircle2 size={16} className="ok" /> Contact Customers (Call / SMS / Portal Updates)
-              </li>
-              <li>
-                <CheckCircle2 size={16} className="ok" /> Workload Capacity Control &amp; Field Dispatch
-              </li>
-            </ul>
-            <div className="account-input-group">
-              <label htmlFor="officer-select">Select Technical Officer</label>
-              <select
-                id="officer-select"
-                value={officerName}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setOfficerName(val);
-                  const idMap = {
-                    'Eng. Nimal Silva': 'TO-101',
-                    'Tech. Chamara Jayasinghe': 'TO-102',
-                    'Eng. Kavindu Perera': 'TO-103',
-                    'Tech. Sashini Wickramasinghe': 'TO-104',
-                  };
-                  setOfficerId(idMap[val] || 'TO-101');
-                }}
-                style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 10,
-                  fontSize: '0.9rem',
-                }}
-              >
-                <option value="Eng. Nimal Silva">Eng. Nimal Silva (TO-101)</option>
-                <option value="Tech. Chamara Jayasinghe">Tech. Chamara Jayasinghe (TO-102)</option>
-                <option value="Eng. Kavindu Perera">Eng. Kavindu Perera (TO-103)</option>
-                <option value="Tech. Sashini Wickramasinghe">Tech. Sashini Wickramasinghe (TO-104)</option>
-              </select>
-            </div>
-          </div>
-          <button
-            className="btn btn-amber"
-            onClick={() => handleStaffLogin('Technical Officer', officerId, officerName)}
-          >
-            Continue as Technical Officer <ArrowRight size={16} />
+            Continue to Assistant <ArrowRight size={15} />
           </button>
         </div>
       </div>
 
-      <div className="staff-bar">
-        <span>Internal Operations / NOC Access:</span>
-        <button
-          className="btn btn-ghost"
-          onClick={() => handleStaffLogin('Tier-1 NOC / Support Agent', 'NOC-01', 'NOC Agent')}
-        >
-          Tier-1 NOC Agent
-        </button>
-        <button
-          className="btn btn-ghost"
-          onClick={() => handleStaffLogin('Tier-2 Core Engineer', 'CORE-01', 'Core Engineer')}
-        >
-          Tier-2 Core Engineer
-        </button>
-        <button
-          className="btn btn-ghost"
-          onClick={() => handleStaffLogin('Sovereign Cloud Auditor', 'AUD-01', 'Cloud Auditor')}
-        >
-          Cloud Auditor
-        </button>
+      {/* Discrete Staff / Technical Officer Bar */}
+      <div className="staff-panel">
+        <div className="staff-panel-left">
+          <div className="role-icon-box amber">
+            <Wrench size={17} />
+          </div>
+          <div>
+            <strong style={{ fontSize: '0.88rem' }}>Technical Officer Portal</strong>
+            <div style={{ fontSize: '0.77rem', color: '#64748b' }}>
+              Review assigned fault tickets, manage workload capacity, and contact subscribers
+            </div>
+          </div>
+        </div>
+
+        <div className="staff-panel-controls">
+          <select
+            aria-label="Select Technical Officer"
+            value={officerName}
+            onChange={(e) => {
+              const val = e.target.value;
+              setOfficerName(val);
+              const idMap = {
+                'Eng. Nimal Silva': 'TO-101',
+                'Tech. Chamara Jayasinghe': 'TO-102',
+                'Eng. Kavindu Perera': 'TO-103',
+                'Tech. Sashini Wickramasinghe': 'TO-104',
+              };
+              setOfficerId(idMap[val] || 'TO-101');
+            }}
+          >
+            <option value="Eng. Nimal Silva">Eng. Nimal Silva (TO-101)</option>
+            <option value="Tech. Chamara Jayasinghe">Tech. Chamara Jayasinghe (TO-102)</option>
+            <option value="Eng. Kavindu Perera">Eng. Kavindu Perera (TO-103)</option>
+            <option value="Tech. Sashini Wickramasinghe">Tech. Sashini Wickramasinghe (TO-104)</option>
+          </select>
+          <button
+            className="btn btn-amber"
+            onClick={() => handleStaffLogin('Technical Officer', officerId, officerName)}
+          >
+            Officer Sign In <ArrowRight size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
