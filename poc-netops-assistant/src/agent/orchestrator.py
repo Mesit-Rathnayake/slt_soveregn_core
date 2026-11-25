@@ -354,12 +354,14 @@ class SLTMobitelUnifiedAgent:
                 break
 
         product_topic = bool(detected_entity) or bool(tokens.intersection({
-            "loan", "borrow", "247", "170", "1456", "888", "111", "999", "ussd"
+            "loan", "borrow", "247", "170", "1456", "888", "111", "999", "ussd",
+            "package", "packages", "plan", "plans", "price", "prices", "broadband"
         }))
         router_topic = bool(tokens.intersection({
-            "router", "internet", "wifi", "wlan", "gpon", "slow", "speed",
-            "connection", "connectivity", "restarted", "reboot", "cable", "cables"
-        }))
+            "router", "wifi", "wlan", "gpon", "slow", "slower", "slowly", "lagging", "buffering",
+            "restarted", "reboot", "rebooted", "cable", "cables", "led", "leds", "blinking",
+            "socket", "outlet", "fault", "problem", "issue", "broken", "disconnected"
+        })) or bool(re.search(r"\b(?:not\s+working|no\s+internet|no\s+connection|low\s+speed|speed\s+is)\b", text))
         if product_topic and not router_topic:
             memory["active_topic"] = "customer_product_support"
             if detected_entity:

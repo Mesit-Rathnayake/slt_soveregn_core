@@ -1486,6 +1486,19 @@ def test_fibre_vs_broadband_recommendation():
     assert "1212" in full_text
     assert "billing proof" in full_text
 
+    # Follow-up asking for broadband packages must NOT bleed into router troubleshooting
+    history = [{"user_input": "I am thinking of Getting a new internet connection for my house... what do you suggest fibre or broadband", "agent_response": res}]
+    res2 = agent.run_agent(
+        "what are the broadband packages you hav",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=history,
+    )
+    full_text2 = (res2["answer_markdown"] + " " + " ".join(res2["key_points"])).lower()
+    assert "troubleshoot" not in full_text2
+    assert "4g lte" in full_text2
+    assert "rs. 535" in full_text2
+
 
 
 
