@@ -204,6 +204,7 @@ def health_check():
         "mcp_tools": tools,
         "crm_live_mode": agent.mcp_server.account_gateway.is_live_crm_enabled,
         "edge_cache": cf_metrics,
+        "llm_gateway": agent.rag.llm_gateway.get_status(),
     }
 
 

@@ -42,6 +42,8 @@ class SovereignLLMGateway:
     BEDROCK_MODELS = [
         "anthropic.claude-3-haiku-20240307-v1:0",
         "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "amazon.nova-lite-v1:0",
+        "amazon.nova-pro-v1:0",
         "amazon.titan-text-express-v1",
         "meta.llama3-8b-instruct-v1:0"
     ]
@@ -56,6 +58,55 @@ class SovereignLLMGateway:
             "AWS_BEDROCK_MODEL_ID",
             "anthropic.claude-3-haiku-20240307-v1:0"
         )
+
+    @staticmethod
+    def _is_valid_secret(val: str | None) -> bool:
+        if not val:
+            return False
+        cleaned = val.strip()
+        return bool(cleaned) and "PASTE_YOUR" not in cleaned.upper() and "REPLACE_ME" not in cleaned.upper()
+
+    def get_status(self) -> dict:
+        """Returns non-sensitive readiness status for AWS Bedrock and Google Gemini."""
+        ak = os.getenv("AWS_ACCESS_KEY_ID", "")
+        sk = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+        gk = os.getenv("GEMINI_API_KEY", "") or self.gemini_key
+        active_mode = os.getenv("AI_INFERENCE_MODE", "AWS_BEDROCK").strip()
+        try:
+            import importlib.util
+            boto3_ok = bool(importlib.util.find_spec("boto3"))
+        except Exception:
+            boto3_ok = False
+        bedrock_ready = boto3_ok and self._is_valid_secret(ak) and self._is_valid_secret(sk)
+        gemini_ready = self._is_valid_secret(gk)
+        return {
+            "active_mode": active_mode,
+            "aws_bedrock_configured": bedrock_ready,
+            "aws_bedrock_model": os.getenv("AWS_BEDROCK_MODEL_ID", self.aws_bedrock_model),
+            "aws_region": os.getenv("AWS_REGION", self.aws_region),
+            "boto3_installed": boto3_ok,
+            "gemini_configured": gemini_ready,
+            "gemini_model": os.getenv("GEMINI_MODEL", self.gemini_model),
+            "live_llm_ready": (active_mode == "AWS_BEDROCK" and bedrock_ready) or (active_mode == "GEMINI_CLOUD" and gemini_ready),
+        }
+
+    def test_connection(self, mode: str | None = None) -> dict:
+        """Runs a lightweight JSON-grounded ping against the configured LLM backend."""
+        target_mode = (mode or os.getenv("AI_INFERENCE_MODE", "AWS_BEDROCK")).strip()
+        ping_prompt = (
+            'Respond ONLY with valid JSON: {"status": "ok", "engine": "' + target_mode + '", '
+            '"message": "SLTMobitel SovereignLLMGateway connected."}'
+        )
+        try:
+            if target_mode == "AWS_BEDROCK":
+                res = self.generate_with_bedrock(ping_prompt)
+            elif target_mode == "GEMINI_CLOUD":
+                res = self.generate_with_gemini(ping_prompt)
+            else:
+                return {"connected": False, "mode": target_mode, "error": f"Unsupported mode: {target_mode}"}
+            return {"connected": True, "mode": target_mode, "response": res}
+        except Exception as exc:
+            return {"connected": False, "mode": target_mode, "error": str(exc)}
 
     @staticmethod
     def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
@@ -205,8 +256,8 @@ STRICT RULES:
         return self._extract_json_dict(raw_text)
 
     def generate_with_gemini(self, prompt: str, api_key_override: str | None = None) -> dict:
-        api_key = api_key_override or self.gemini_key
-        if not api_key or "PASTE_YOUR" in api_key:
+        api_key = api_key_override or os.getenv("GEMINI_API_KEY", "") or self.gemini_key
+        if not self._is_valid_secret(api_key):
             raise ValueError("Missing valid GEMINI_API_KEY in .env or sidebar input.")
 
         url = (
@@ -245,9 +296,19 @@ STRICT RULES:
 if __name__ == "__main__":
     base_dir = Path(__file__).resolve().parents[2]
     gw = SovereignLLMGateway(env_path=base_dir / ".env")
+    status = gw.get_status()
     print("=" * 60)
     print("SLTMOBITEL AI - AWS BEDROCK & CLOUD GATEWAY CHECK")
     print("=" * 60)
-    print(f"AWS Region           : {gw.aws_region}")
-    print(f"Default Bedrock LLM  : {gw.aws_bedrock_model}")
-    print(f"Supported Models     : {gw.BEDROCK_MODELS}")
+    print(f"Active Mode          : {status['active_mode']}")
+    print(f"AWS Region           : {status['aws_region']}")
+    print(f"Default Bedrock LLM  : {status['aws_bedrock_model']}")
+    print(f"Bedrock Configured   : {status['aws_bedrock_configured']} (boto3: {status['boto3_installed']})")
+    print(f"Gemini Model         : {status['gemini_model']}")
+    print(f"Gemini Configured    : {status['gemini_configured']}")
+    print(f"Live LLM Ready       : {status['live_llm_ready']}")
+    if "--test" in sys.argv:
+        print("-" * 60)
+        print("Running live connection test...")
+        res = gw.test_connection()
+        print(json.dumps(res, indent=2))

@@ -1500,6 +1500,30 @@ def test_fibre_vs_broadband_recommendation():
     assert "rs. 535" in full_text2
 
 
+def test_llm_gateway_status_and_health_endpoint():
+    """Verifies SovereignLLMGateway reports safe readiness status without exposing secrets."""
+    from agent.llm_gateway import SovereignLLMGateway
+    from api.server import health_check
+
+    gw = SovereignLLMGateway()
+    assert gw._is_valid_secret("PASTE_YOUR_AWS_ACCESS_KEY_ID") is False
+    assert gw._is_valid_secret("") is False
+    assert gw._is_valid_secret("AIzaSyValidKeyExample123") is True
+
+    health = health_check()
+    assert "llm_gateway" in health
+    llm_info = health["llm_gateway"]
+    assert llm_info["active_mode"] in ("AWS_BEDROCK", "GEMINI_CLOUD", "LOCAL_GROUNDED_RULE_ENGINE")
+    assert "aws_bedrock_configured" in llm_info
+    assert "gemini_configured" in llm_info
+    assert "live_llm_ready" in llm_info
+    # Ensure no secret keys are ever serialized in health response
+    health_str = str(health)
+    assert "AWS_SECRET_ACCESS_KEY" not in health_str
+    assert "GEMINI_API_KEY" not in health_str
+
+
+
 
 
 
