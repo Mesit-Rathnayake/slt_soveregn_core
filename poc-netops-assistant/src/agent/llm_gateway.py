@@ -260,10 +260,12 @@ STRICT RULES:
         if not self._is_valid_secret(api_key):
             raise ValueError("Missing valid GEMINI_API_KEY in .env or sidebar input.")
 
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.gemini_model}:generateContent"
-        )
+        primary_model = os.getenv("GEMINI_MODEL", self.gemini_model).strip() or "gemini-3.8-flash"
+        candidate_models = []
+        for m in (primary_model, "gemini-3.1-flash-lite", "gemini-flash-latest"):
+            if m and m not in candidate_models:
+                candidate_models.append(m)
+
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -271,18 +273,38 @@ STRICT RULES:
                 "responseMimeType": "application/json"
             }
         }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            # Send the key as a header, not in the URL, so it never appears in logs/proxies/tracebacks.
-            headers={"Content-Type": "application/json", "x-goog-api-key": api_key.strip()},
-            method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Gemini API returned HTTP {exc.code}") from None
+        payload_bytes = json.dumps(payload).encode("utf-8")
+        last_err = None
+        body = None
+
+        for model_name in candidate_models:
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model_name}:generateContent"
+            )
+            req = urllib.request.Request(
+                url,
+                data=payload_bytes,
+                # Send the key as a header, not in the URL, so it never appears in logs/proxies/tracebacks.
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key.strip()},
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                    self.gemini_model = model_name
+                    break
+            except urllib.error.HTTPError as exc:
+                last_err = RuntimeError(f"Gemini API ({model_name}) returned HTTP {exc.code}")
+                if exc.code in (404, 429, 500, 503):
+                    continue
+                raise last_err from None
+            except Exception as exc:
+                last_err = exc
+                continue
+
+        if body is None:
+            raise last_err or RuntimeError("Gemini API request failed across all candidate models.")
         candidates = body.get("candidates") or []
         if not candidates:
             raise RuntimeError("Gemini API returned no candidates (possibly blocked by safety filters).")
