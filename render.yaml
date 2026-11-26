@@ -1,0 +1,30 @@
+# Render.com Free-Tier Blueprint for SLTMobitel Sovereign AI Platform
+# Deploy in 1 click at https://dashboard.render.com/blueprints using your GitHub repo.
+services:
+  - type: web
+    name: slt-sovereign-ai-portal
+    runtime: docker
+    plan: free
+    dockerfilePath: ./poc-netops-assistant/Dockerfile
+    dockerContext: ./poc-netops-assistant
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: SLT_ENV
+        value: prod
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: AI_INFERENCE_MODE
+        value: GEMINI_CLOUD
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: SLT_KB_DEFAULT_TOP_K
+        value: "3"
+      - key: SLT_TOKEN_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SLT_KB_API_URL
+        sync: false
+      - key: SLT_KB_AUTH_SECRET
+        sync: false
