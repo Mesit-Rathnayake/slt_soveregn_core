@@ -52,7 +52,7 @@ class SovereignLLMGateway:
         if env_path:
             load_dotenv_file(env_path)
         self.gemini_key = os.getenv("GEMINI_API_KEY", "")
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
         self.aws_region = os.getenv("AWS_REGION", "us-east-1")
         self.aws_bedrock_model = os.getenv(
             "AWS_BEDROCK_MODEL_ID",
