@@ -1539,6 +1539,39 @@ def test_general_services_overview_query():
     assert "data add-ons" in full_text
 
 
+def test_most_expensive_fibre_followup_and_no_sop_leak():
+    """Follow-up 'the most expensive one ?' returns top Fibre plans and NEVER leaks NetOps SOPs."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+
+    # 1. Customer KB retrieval must strictly exclude internal NetOps SOPs (slt_sop_*.md)
+    kb_res = agent.rag.retrieve_from_aws_kb("core fiber trunks BGP alarm", top_k=5)
+    for chunk in kb_res.get("chunks", []):
+        assert not str(chunk.get("source_file", "")).lower().startswith("slt_sop_")
+        assert not str(chunk.get("doc_id", "")).upper().startswith("SLT-NET-SOP")
+
+    # 2. Multi-turn: 'cheapest fibre option' -> 'the most expensive one ?'
+    res1 = agent.run_agent(
+        "cheapest fibre option",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+    )
+    assert "fiber starter" in res1["answer_markdown"].lower()
+
+    res2 = agent.run_agent(
+        "the most expensive one ?",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+        conversation_history=[{"user_input": "cheapest fibre option", "agent_response": res1}],
+        session_memory=res1.get("session_memory"),
+    )
+    ans2 = res2["answer_markdown"].lower()
+    assert "ultra prime" in ans2 or "75,000" in ans2
+    assert "bgp-5-adjchange" not in ans2
+    assert "tengige" not in ans2
+
+
+
 
 
 

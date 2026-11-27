@@ -110,7 +110,8 @@ class SLTPackageCatalog:
         min_speed_mbps: int | None = None,
         is_unlimited: bool | None = None,
         search_term: str | None = None,
-        limit: int = 6
+        limit: int = 6,
+        sort_order: str = "asc"
     ) -> dict:
         results = []
         cat_lower = (category or "all").lower().strip()
@@ -133,7 +134,10 @@ class SLTPackageCatalog:
                     continue
             results.append(p)
 
-        results.sort(key=lambda x: (x["price_rs"] is None, x["price_rs"] or 0))
+        if str(sort_order or "asc").lower() == "desc":
+            results.sort(key=lambda x: (x["price_rs"] is None, -(x["price_rs"] or 0)))
+        else:
+            results.sort(key=lambda x: (x["price_rs"] is None, x["price_rs"] or 0))
 
         bullets = []
         for r in results[:limit]:

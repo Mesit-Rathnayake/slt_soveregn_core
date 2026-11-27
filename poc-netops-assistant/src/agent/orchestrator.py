@@ -462,9 +462,12 @@ class SLTMobitelUnifiedAgent:
             except ValueError:
                 pass
 
-        # Cheapest / lowest price
+        # Cheapest / lowest price or most expensive / highest price
+        is_most_expensive = False
         if any(w in q_lower for w in ("cheapest", "lowest price", "most affordable", "lowest cost")):
             is_cheapest = True
+        if any(w in q_lower for w in ("most expensive", "expensive", "highest price", "highest cost", "priciest", "costliest", "top tier", "highest tier")):
+            is_most_expensive = True
 
         # Speed patterns: ">= 500 mbps", "at least 100 mbps", "minimum 300 mbps", "over 100 mbps", "500 mbps"
         m_speed = re.search(
@@ -487,6 +490,7 @@ class SLTMobitelUnifiedAgent:
             or min_price is not None
             or min_speed_mbps is not None
             or is_cheapest
+            or is_most_expensive
             or (is_unlimited and any(w in q_lower for w in ("package", "packages", "plan", "plans", "filter", "show", "list", "options")))
         )
 
@@ -513,7 +517,7 @@ class SLTMobitelUnifiedAgent:
                 search_term = term
                 break
 
-        limit = 1 if is_cheapest else 6
+        limit = 1 if is_cheapest else (2 if is_most_expensive else 6)
 
         return {
             "category": category,
@@ -522,7 +526,8 @@ class SLTMobitelUnifiedAgent:
             "min_speed_mbps": min_speed_mbps,
             "is_unlimited": is_unlimited,
             "search_term": search_term,
-            "limit": limit
+            "limit": limit,
+            "sort_order": "desc" if is_most_expensive else "asc"
         }
 
     @classmethod

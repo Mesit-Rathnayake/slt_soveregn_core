@@ -60,12 +60,17 @@ class SovereignNetOpsRAG:
                 })
         return chunks
 
-    def retrieve_relevant_sections(self, query_text: str, top_k: int = 4) -> list[dict]:
+    def retrieve_relevant_sections(self, query_text: str, top_k: int = 4, customer_only: bool = False) -> list[dict]:
         query_tokens = set(re.findall(r"[a-zA-Z0-9_-]{3,}", query_text.lower()))
         ussd_in_q = re.findall(r"[*#]?[0-9]+#?", query_text.lower())
         scored_chunks = []
 
         for chunk in self.knowledge_base:
+            if customer_only:
+                src_f = str(chunk.get("source_file", "")).lower()
+                doc_i = str(chunk.get("doc_id", "")).upper()
+                if src_f.startswith("slt_sop_") or doc_i.startswith("SLT-NET-SOP"):
+                    continue
             chunk_content_lower = chunk["content"].lower()
             chunk_tokens = set(re.findall(r"[a-zA-Z0-9_-]{3,}", chunk_content_lower))
             lexical_overlap = len(query_tokens.intersection(chunk_tokens))
@@ -163,7 +168,7 @@ class SovereignNetOpsRAG:
             cloud_error = str(exc)
             cloud_chunks = []
 
-        local_sections = self.retrieve_relevant_sections(query_text, top_k=top_k)
+        local_sections = self.retrieve_relevant_sections(query_text, top_k=top_k, customer_only=True)
         local_chunks = []
         for sec in local_sections:
             local_chunks.append({

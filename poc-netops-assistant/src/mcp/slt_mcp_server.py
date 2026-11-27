@@ -398,6 +398,7 @@ class SLTMCPToolServer:
             except (TypeError, ValueError):
                 lim = 6
 
+            sort_order = str(args.get("sort_order", "asc")).lower()
             res = self.package_catalog.filter_packages(
                 category=category,
                 max_price=max_price,
@@ -405,7 +406,8 @@ class SLTMCPToolServer:
                 min_speed_mbps=min_speed,
                 is_unlimited=is_unl,
                 search_term=term,
-                limit=lim
+                limit=lim,
+                sort_order=sort_order
             )
             text_md = (
                 f"### {res['headline']}\n\n" + res["summary_markdown"]
