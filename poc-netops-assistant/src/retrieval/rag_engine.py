@@ -307,7 +307,7 @@ class SovereignNetOpsRAG:
 
     @classmethod
     def _is_kb_summary_query(cls, query_text: str) -> bool:
-        """Detects queries asking for a summary, overview, or catalog of everything in the KnowledgeBase."""
+        """Detects queries asking for a summary, overview, or catalog of SLTMobitel services."""
         current_q = re.split(r"\s*\(context:", query_text, maxsplit=1, flags=re.IGNORECASE)[0].strip().lower()
         if cls._has_any_term(current_q, ("knowledge base", "knowledgebase", "kb")):
             if cls._has_any_term(current_q, (
@@ -316,6 +316,13 @@ class SovereignNetOpsRAG:
             )):
                 return True
         if cls._has_any_term(current_q, ("summary", "summarize", "summarise")) and cls._has_any_term(current_q, ("everything", "all topics", "all services")):
+            return True
+        # General "what services / products does SLT provide / offer?" inquiries
+        if cls._has_any_term(current_q, ("service", "services", "product", "products")) and cls._has_any_term(
+            current_q, ("provide", "provides", "offer", "offers", "offered", "available", "have", "list", "all")
+        ) and not cls._has_any_term(
+            current_q, ("fibre", "fiber", "ftth", "lte", "4g", "peotv", "peo", "loan", "roaming", "mcash", "esim", "enterprise", "business", "sme", "cloud", "starlink")
+        ):
             return True
         return False
 
@@ -1004,11 +1011,18 @@ class SovereignNetOpsRAG:
             title = f"**{headers[0]} & Details:**" if headers else "Available packages:"
             return title, formatted_bullets
 
-        # 8B. Match Numbered Step sequences (Step 1, Step 2, ...)
-        step_matches = re.findall(r"(?:Step\s*\d+[\s:\-–]+|\b\d+[\.\)]\s+)([^\n\r]+)", combined_raw, re.IGNORECASE)
-        clean_steps = [s.strip() for s in step_matches if len(s.strip()) > 8 and not re.search(r"application\s*form|download|bill\s*proof", s, re.I)]
-        if len(clean_steps) >= 2:
-            return "Follow these steps from the KnowledgeBase:", [f"**Step {i+1}:** {st}" for i, st in enumerate(clean_steps[:5])]
+        # 8B. Match Numbered Step sequences (Step 1, Step 2, ...) only for procedural queries
+        is_procedural_q = asks("how", "step", "steps", "setup", "set up", "activate", "enable", "disable", "remove", "connect", "troubleshoot", "fix", "configure")
+        if is_procedural_q:
+            step_matches = re.findall(r"(?:Step\s*\d+[\s:\-–]+|\b\d+[\.\)]\s+)([^\n\r]+)", combined_raw, re.IGNORECASE)
+            clean_steps = [
+                s.strip() for s in step_matches
+                if len(s.strip()) > 8
+                and not s.strip().endswith(":")
+                and not re.search(r"application\s*form|download|bill\s*proof", s, re.I)
+            ]
+            if len(clean_steps) >= 2:
+                return "Follow these steps from the KnowledgeBase:", [f"**Step {i+1}:** {st}" for i, st in enumerate(clean_steps[:5])]
 
         # 8C. Match Bullet Points (- Item: Details)
         q_keywords = [w for w in re.findall(r"[a-zA-Z0-9]{2,}", current_q) if w not in cls.STOPWORDS]

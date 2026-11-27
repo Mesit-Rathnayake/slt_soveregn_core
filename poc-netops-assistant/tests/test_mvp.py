@@ -1523,6 +1523,23 @@ def test_llm_gateway_status_and_health_endpoint():
     assert "GEMINI_API_KEY" not in health_str
 
 
+def test_general_services_overview_query():
+    """Asking 'What are the services slt provide' returns a clean services overview, not raw USSD steps."""
+    manuals_dir = BASE_DIR / "data" / "approved_manuals"
+    agent = SLTMobitelUnifiedAgent(manuals_dir=manuals_dir, enable_embeddings=False)
+    res = agent.run_agent(
+        "What are the services slt provide",
+        route_mode="AUTO",
+        inference_engine="LOCAL_GROUNDED_RULE_ENGINE",
+    )
+    full_text = (res["answer_markdown"] + " " + " ".join(res["key_points"])).lower()
+    assert "follow these steps" not in full_text
+    assert "broadband packages" in full_text
+    assert "peotv" in full_text
+    assert "data add-ons" in full_text
+
+
+
 
 
 
