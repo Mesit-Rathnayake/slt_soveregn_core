@@ -82,6 +82,10 @@ class SovereignNetOpsRAG:
             if any(t in sec_lower for t in query_tokens if len(t) >= 4 and t not in self.STOPWORDS):
                 lexical_overlap += 3
 
+            # Boost Services & Products Overview chunk for broad service/catalog overview questions
+            if "overview" in sec_lower and self._is_kb_summary_query(query_text):
+                lexical_overlap += 12
+
             if lexical_overlap > 0:
                 norm_score = min(0.95, 0.55 + (lexical_overlap * 0.06))
                 scored_chunks.append((lexical_overlap, norm_score, chunk))
@@ -1129,7 +1133,6 @@ class SovereignNetOpsRAG:
         )
         if (
             active_mode in ("AWS_BEDROCK", "GEMINI_CLOUD")
-            and not self._is_kb_summary_query(sanitized_query)
             and not is_loan_or_ussd_query
         ):
             prompt = self.llm_gateway.build_kb_qa_prompt(sanitized_query, chunks)

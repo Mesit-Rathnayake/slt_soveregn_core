@@ -6,6 +6,16 @@
 
 ---
 
+## Section 0: SLTMobitel Services & Products Overview
+SLTMobitel provides the following core consumer, mobile, home, and enterprise telecommunications services across Sri Lanka:
+- **Fibre (FTTH) Broadband:** High-speed fiber-optic home and office internet (`100 Mbps` to `1 Gbps`), including Fiber Starter (`80 GB` — Rs. 2,690), Trio bundled plans, Unlimited Home (Rs. 5,900) up to Unlimited Turbo (`1000/300 Mbps`), Ultra Prime, and Megaline-to-Fibre migration offers.
+- **4G LTE Home Broadband:** Wireless home broadband with Anytime volume plans (starting from `20 GB` — Rs. 535 up to `400 GB` — Rs. 7,990), LTE Unlimited 2/4/8 Mbps, Unlimited LTE Flash 5 & 10 (with free unlimited data `12 midnight – 7 AM`), and 4G LTE Postpaid SIM-Only (Rs. 1,000).
+- **PEOTV & Entertainment:** IPTV television packages from PEO Bronze (`72 channels` — Rs. 860) up to PEO HD Plus (`160 channels` — Rs. 3,125), PEO 4G Elite (`50 channels` — Rs. 790), and PEO Mobile app (Rs. 249).
+- **Fixed Voice & Mobile Services:** Unlimited fixed voice plans (Rs. 747 / Rs. 902 per month), Mobitel Pre-Paid and Post-Paid mobile plans, eSIM (`*#06#`), International Roaming & IDD (`#999#`), mCash mobile money (`#111#`), Instant Credit Loan (`#247#`), and Data Loan (`#170#`).
+- **Data Add-ons:** Specialized add-ons for YouTube, Messenger/WhatsApp/Viber, Youth, Entertainment Combo, Streamer Premium, Gamer Lite/Premium, LMS E-Learning, and Voice 100 Min.
+- **Enterprise & Business Solutions:** Enterprise Premium Cloud & SDDC, Enterprise Connectivity, Cyber Security, Voice & Collaboration, AI Portfolio, Digital & Managed Services, and Starlink Business solutions.
+- **Self-Care & Support:** MySLT App (`https://myslt.slt.lk/`), USSD self-care portals (`#1456#`, `#888#`, `#170#`), hotlines `1212` (Fixed/Fibre/PEOTV) and `1717` (Mobile), and island-wide SLT branches.
+
 ## Section 1: Fibre (FTTH) Broadband Packages (100 Mbps to 1 Gbps)
 | Package Name | Monthly Rental (Rs.) | Data Volume | Speed (Download / Upload) | Type |
 | :--- | :--- | :--- | :--- | :--- |
